@@ -1,0 +1,940 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================
+   QuestMind - Sakura Pink Theme
+   温柔樱花风 · 可爱 AI 陪伴体验
+   ============================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800&family=Noto+Sans+SC:wght@300;400;500;600;700&display=swap');
+
+@layer base {
+  :root {
+    /* ===== Core HSL Variables (shadcn/ui compatible) ===== */
+    --background: 340 30% 98%;
+    --foreground: 340 15% 20%;
+    --card: 0 0% 100%;
+    --card-foreground: 340 15% 20%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 340 15% 20%;
+    --primary: 340 75% 65%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 340 25% 95%;
+    --secondary-foreground: 340 20% 40%;
+    --muted: 340 20% 96%;
+    --muted-foreground: 340 10% 55%;
+    --accent: 15 90% 70%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 340 20% 90%;
+    --input: 340 20% 92%;
+    --ring: 340 75% 65%;
+    --radius: 1rem;
+
+    /* ===== Sakura Color Palette ===== */
+    /* Primary - 樱花粉 */
+    --sakura-pink: 340 75% 65%;           /* #e8698f */
+    --sakura-light: 340 80% 80%;          /* 浅粉 */
+    --sakura-pale: 340 60% 92%;           /* 极浅粉 */
+
+    /* Secondary - 暖橙 */
+    --peach-orange: 15 90% 70%;           /* #f9a06b 桃橙 */
+    --peach-light: 15 80% 85%;            /* 浅桃 */
+
+    /* Accent - 薰衣紫 */
+    --lavender: 270 55% 72%;              /* #a87fd4 薰衣草紫 */
+    --lavender-light: 270 50% 88%;        /* 浅紫 */
+
+    /* Support - 天空蓝 */
+    --sky-blue: 200 70% 70%;              /* #68bde8 天蓝 */
+
+    /* Support - 薄荷绿 */
+    --mint-green: 155 55% 65%;            /* #5dc4a0 薄荷 */
+
+    /* Background System */
+    --bg-warm: 340 40% 98%;               /* 最浅底色 */
+    --bg-base: 340 30% 97%;               /* 基础层 */
+    --bg-surface: 0 0% 100%;             /* 白色面板 */
+    --bg-elevated: 340 30% 99%;           /* 略微浮起 */
+    --bg-hover: 340 50% 97%;              /* 悬浮层 */
+
+    /* Text Colors */
+    --text-primary: 340 20% 20%;          /* 主文字 深灰粉 */
+    --text-secondary: 340 12% 45%;        /* 次文字 */
+    --text-muted: 340 8% 65%;             /* 弱文字 */
+    --text-accent: 340 75% 55%;           /* 强调 粉红 */
+
+    /* Border System */
+    --border-subtle: 340 25% 93%;         /* 微弱边框 */
+    --border-default: 340 20% 88%;        /* 默认边框 */
+    --border-highlight: 340 70% 78%;      /* 高亮边框 */
+  }
+
+  .dark {
+    /* 深色模式保持与浅色一致（本项目不使用深色） */
+    --background: 340 30% 98%;
+    --foreground: 340 15% 20%;
+    --card: 0 0% 100%;
+    --card-foreground: 340 15% 20%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 340 15% 20%;
+    --primary: 340 75% 65%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 340 25% 95%;
+    --secondary-foreground: 340 20% 40%;
+    --muted: 340 20% 96%;
+    --muted-foreground: 340 10% 55%;
+    --accent: 15 90% 70%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 340 20% 90%;
+    --input: 340 20% 92%;
+    --ring: 340 75% 65%;
+    --radius: 1rem;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Nunito', 'Noto Sans SC', 'Microsoft YaHei', -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+/* ============================================
+   Scrollbar - Soft Pink Style
+   ============================================ */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: hsl(var(--bg-warm));
+}
+
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, hsl(var(--sakura-light)) 0%, hsl(var(--lavender-light)) 100%);
+  border-radius: 99px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg, hsl(var(--sakura-pink)) 0%, hsl(var(--lavender)) 100%);
+}
+
+/* ============================================
+   Animations - Cute & Soft Style
+   ============================================ */
+
+/* Core entrance animation */
+.animate-in {
+  animation: softFadeIn 0.5s ease-out forwards;
+}
+
+@keyframes softFadeIn {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Float animations */
+@keyframes float {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50% { transform: translateY(-8px) rotate(2deg); }
+}
+
+@keyframes floatSlow {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-12px); }
+}
+
+@keyframes sparkle {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.6); }
+}
+
+@keyframes pulse-soft {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}
+
+/* Sakura petal fall */
+@keyframes sakuraFall {
+  0% {
+    transform: translateY(-10px) rotate(0deg);
+    opacity: 0;
+  }
+  10% { opacity: 1; }
+  90% { opacity: 0.8; }
+  100% {
+    transform: translateY(100vh) rotate(720deg);
+    opacity: 0;
+  }
+}
+
+/* Gentle bounce */
+@keyframes bounce-gentle {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+/* Heart beat */
+@keyframes heartbeat {
+  0%, 100% { transform: scale(1); }
+  25% { transform: scale(1.15); }
+  50% { transform: scale(1); }
+  75% { transform: scale(1.08); }
+}
+
+/* Wiggle */
+@keyframes wiggle {
+  0%, 100% { transform: rotate(0deg); }
+  25% { transform: rotate(-5deg); }
+  75% { transform: rotate(5deg); }
+}
+
+/* Shimmer */
+@keyframes shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+/* Animation utility classes */
+.animate-float { animation: float 4s ease-in-out infinite; }
+.animate-float-slow { animation: floatSlow 6s ease-in-out infinite; }
+.animate-sparkle { animation: sparkle 3s ease-in-out infinite; }
+.animate-pulse-soft { animation: pulse-soft 3s ease-in-out infinite; }
+.animate-bounce-gentle { animation: bounce-gentle 2s ease-in-out infinite; }
+.animate-heartbeat { animation: heartbeat 1.5s ease-in-out infinite; }
+.animate-wiggle { animation: wiggle 0.5s ease-in-out; }
+.animate-shimmer { animation: shimmer 2s ease-in-out infinite; }
+
+/* ============================================
+   Gradient Backgrounds - Soft & Warm
+   ============================================ */
+
+.gradient-primary {
+  background: linear-gradient(135deg, hsl(var(--sakura-pink)) 0%, hsl(var(--lavender)) 100%);
+}
+
+.gradient-warm {
+  background: linear-gradient(135deg, hsl(var(--sakura-pink)) 0%, hsl(var(--peach-orange)) 100%);
+}
+
+.gradient-cool {
+  background: linear-gradient(135deg, hsl(var(--lavender)) 0%, hsl(var(--sky-blue)) 100%);
+}
+
+/* Main page background */
+.bg-sakura-base {
+  background:
+    radial-gradient(ellipse at 10% 10%, hsl(var(--sakura-pale)) 0%, transparent 50%),
+    radial-gradient(ellipse at 90% 90%, hsl(var(--lavender-light)) 0%, transparent 50%),
+    hsl(var(--bg-warm));
+}
+
+/* ============================================
+   Glass Morphism - Soft Edition
+   ============================================ */
+
+.glass {
+  background: hsl(0 0% 100% / 0.7);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid hsl(var(--border-subtle));
+}
+
+.glass-card {
+  background: hsl(0 0% 100% / 0.85);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid hsl(var(--sakura-light) / 0.4);
+  border-radius: 1.25rem;
+  box-shadow:
+    0 4px 24px hsl(var(--sakura-pink) / 0.08),
+    0 1px 4px hsl(0 0% 0% / 0.05);
+}
+
+/* ============================================
+   Sakura Particle System
+   ============================================ */
+
+.sakura-particles {
+  position: fixed;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 0;
+}
+
+.sakura-petal {
+  position: absolute;
+  width: 8px; height: 8px;
+  background: hsl(var(--sakura-light));
+  border-radius: 50% 0 50% 0;
+  opacity: 0.6;
+  animation: sakuraFall linear infinite;
+}
+
+/* ============================================
+   Text Effects - Soft Glow
+   ============================================ */
+
+.text-glow {
+  color: hsl(var(--sakura-pink));
+  text-shadow:
+    0 0 12px hsl(var(--sakura-pink) / 0.4),
+    0 0 24px hsl(var(--sakura-pink) / 0.2);
+}
+
+.text-glow-peach {
+  color: hsl(var(--peach-orange));
+  text-shadow:
+    0 0 12px hsl(var(--peach-orange) / 0.4);
+}
+
+.text-glow-lavender {
+  color: hsl(var(--lavender));
+  text-shadow:
+    0 0 12px hsl(var(--lavender) / 0.4);
+}
+
+/* ============================================
+   Chat Bubbles - Cute Style
+   ============================================ */
+
+.chat-bubble-user {
+  background: linear-gradient(135deg, hsl(var(--sakura-pink)) 0%, hsl(var(--peach-orange)) 100%);
+  color: white;
+  border-radius: 1.25rem 1.25rem 0.25rem 1.25rem;
+  box-shadow: 0 4px 16px hsl(var(--sakura-pink) / 0.25);
+}
+
+.chat-bubble-other {
+  background: hsl(0 0% 100%);
+  color: hsl(var(--text-primary));
+  border: 1px solid hsl(var(--border-subtle));
+  border-radius: 1.25rem 1.25rem 1.25rem 0.25rem;
+  box-shadow: 0 2px 12px hsl(0 0% 0% / 0.06);
+}
+
+/* Character dialog box */
+.chat-box-character {
+  background: hsl(0 0% 100% / 0.95);
+  border: 1.5px solid hsl(var(--sakura-light) / 0.6);
+  border-radius: 1.5rem;
+  box-shadow:
+    0 8px 32px hsl(var(--sakura-pink) / 0.1),
+    0 2px 8px hsl(0 0% 0% / 0.06);
+}
+
+/* ============================================
+   Input Fields - Cute Style
+   ============================================ */
+
+.input-gal {
+  background: hsl(var(--bg-surface));
+  border: 1.5px solid hsl(var(--border-default));
+  border-radius: 0.875rem;
+  padding: 0.875rem 1.25rem;
+  color: hsl(var(--text-primary));
+  transition: all 0.25s ease;
+}
+
+.input-gal::placeholder {
+  color: hsl(var(--text-muted));
+}
+
+.input-gal:focus {
+  border-color: hsl(var(--sakura-pink));
+  box-shadow:
+    0 0 0 3px hsl(var(--sakura-pink) / 0.12),
+    0 2px 8px hsl(var(--sakura-pink) / 0.08);
+  outline: none;
+}
+
+.input-gal:hover {
+  border-color: hsl(var(--sakura-light));
+}
+
+/* ============================================
+   Buttons - Cute Rounded Style
+   ============================================ */
+
+.btn-gal {
+  background: linear-gradient(135deg, hsl(var(--sakura-pink)) 0%, hsl(350 75% 62%) 100%);
+  color: white;
+  border: none;
+  border-radius: 9999px;
+  padding: 0.7rem 1.75rem;
+  font-weight: 700;
+  font-size: 0.875rem;
+  position: relative;
+  overflow: hidden;
+  transition: all 0.25s ease;
+  box-shadow: 0 4px 16px hsl(var(--sakura-pink) / 0.3);
+}
+
+.btn-gal::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, transparent 40%, hsl(0 0% 100% / 0.2) 50%, transparent 60%);
+  transform: translateX(-100%);
+  transition: transform 0.4s ease;
+}
+
+.btn-gal:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px hsl(var(--sakura-pink) / 0.4);
+}
+
+.btn-gal:hover::before {
+  transform: translateX(100%);
+}
+
+.btn-gal:active {
+  transform: translateY(0) scale(0.97);
+}
+
+.btn-peach {
+  background: linear-gradient(135deg, hsl(var(--peach-orange)) 0%, hsl(25 90% 65%) 100%);
+  color: white;
+  border-radius: 9999px;
+  box-shadow: 0 4px 16px hsl(var(--peach-orange) / 0.3);
+}
+
+.btn-peach:hover {
+  box-shadow: 0 8px 24px hsl(var(--peach-orange) / 0.4);
+  transform: translateY(-2px);
+}
+
+.btn-outline {
+  background: transparent;
+  color: hsl(var(--sakura-pink));
+  border: 1.5px solid hsl(var(--sakura-pink));
+  border-radius: 9999px;
+  padding: 0.7rem 1.75rem;
+  font-weight: 700;
+  font-size: 0.875rem;
+  transition: all 0.25s ease;
+}
+
+.btn-outline:hover {
+  background: hsl(var(--sakura-pink) / 0.06);
+  box-shadow: 0 4px 16px hsl(var(--sakura-pink) / 0.15);
+}
+
+/* ============================================
+   Card Hover Effects - Cute Style
+   ============================================ */
+
+.card-hover {
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.card-hover:hover {
+  transform: translateY(-4px) scale(1.01);
+  box-shadow:
+    0 12px 40px hsl(var(--sakura-pink) / 0.12),
+    0 4px 12px hsl(0 0% 0% / 0.06);
+}
+
+/* ============================================
+   Tabs - Cute Pill Style
+   ============================================ */
+
+.tab-gal {
+  background: transparent;
+  border: none;
+  padding: 0.625rem 1.25rem;
+  font-weight: 600;
+  color: hsl(var(--text-muted));
+  border-radius: 9999px;
+  position: relative;
+  transition: all 0.25s ease;
+  font-size: 0.875rem;
+}
+
+.tab-gal:hover {
+  color: hsl(var(--text-secondary));
+  background: hsl(var(--sakura-pale));
+}
+
+.tab-gal[data-state="active"] {
+  background: linear-gradient(135deg, hsl(var(--sakura-pink)) 0%, hsl(var(--peach-orange)) 100%);
+  color: white;
+  font-weight: 700;
+  box-shadow: 0 4px 12px hsl(var(--sakura-pink) / 0.3);
+}
+
+/* ============================================
+   Badge - Cute Tag Style
+   ============================================ */
+
+.badge-gal {
+  background: hsl(var(--sakura-pale));
+  color: hsl(var(--sakura-pink));
+  border: 1px solid hsl(var(--sakura-light) / 0.5);
+  border-radius: 9999px;
+  padding: 0.2rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.badge-peach {
+  background: hsl(var(--peach-light) / 0.5);
+  color: hsl(var(--peach-orange));
+  border: 1px solid hsl(var(--peach-light));
+  border-radius: 9999px;
+  padding: 0.2rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.badge-lavender {
+  background: hsl(var(--lavender-light) / 0.5);
+  color: hsl(var(--lavender));
+  border: 1px solid hsl(var(--lavender-light));
+  border-radius: 9999px;
+  padding: 0.2rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.badge-danger {
+  background: hsl(0 80% 96%);
+  color: hsl(0 75% 55%);
+  border: 1px solid hsl(0 70% 88%);
+  border-radius: 9999px;
+  padding: 0.2rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+/* ============================================
+   Avatar - Cute Frame
+   ============================================ */
+
+.character-frame {
+  position: relative;
+  padding: 3px;
+  background: linear-gradient(135deg, hsl(var(--sakura-pink)), hsl(var(--lavender)), hsl(var(--peach-orange)));
+  border-radius: 50%;
+  box-shadow: 0 4px 16px hsl(var(--sakura-pink) / 0.3);
+}
+
+.character-frame::before {
+  content: '';
+  position: absolute;
+  inset: 2px;
+  background: white;
+  border-radius: 50%;
+  z-index: 0;
+}
+
+.character-frame img,
+.character-frame > div {
+  position: relative;
+  z-index: 1;
+  border-radius: 50%;
+}
+
+/* ============================================
+   Divider - Cute Line Style
+   ============================================ */
+
+.divider-gal {
+  height: 1.5px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    hsl(var(--sakura-light)) 30%,
+    hsl(var(--sakura-pink) / 0.5) 50%,
+    hsl(var(--sakura-light)) 70%,
+    transparent 100%
+  );
+  position: relative;
+}
+
+.divider-gal::after {
+  content: '🌸';
+  position: absolute;
+  left: 50%; top: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 0.875rem;
+  line-height: 1;
+}
+
+/* ============================================
+   Navigation Items - Cute Nav
+   ============================================ */
+
+.nav-item-gal {
+  position: relative;
+  padding: 0.625rem 1rem;
+  border-radius: 0.875rem;
+  transition: all 0.2s ease;
+}
+
+.nav-item-gal:hover {
+  background: hsl(var(--sakura-pale));
+}
+
+.nav-item-gal[data-active="true"] {
+  background: linear-gradient(135deg, hsl(var(--sakura-pink) / 0.12) 0%, hsl(var(--lavender) / 0.08) 100%);
+  color: hsl(var(--sakura-pink));
+  font-weight: 700;
+}
+
+/* ============================================
+   Section Header - Cute Title
+   ============================================ */
+
+.section-header {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  margin-bottom: 1.25rem;
+}
+
+.section-header::before {
+  content: '';
+  width: 4px;
+  height: 20px;
+  background: linear-gradient(180deg, hsl(var(--sakura-pink)), hsl(var(--peach-orange)));
+  border-radius: 99px;
+}
+
+.section-header span {
+  font-weight: 700;
+  font-size: 0.925rem;
+  color: hsl(var(--text-primary));
+}
+
+/* ============================================
+   Progress Bar - Cute Pink Style
+   ============================================ */
+
+.progress-sakura {
+  background: hsl(var(--sakura-pale));
+  border-radius: 9999px;
+  overflow: hidden;
+}
+
+.progress-sakura::-webkit-progress-bar {
+  background: transparent;
+  border-radius: 9999px;
+}
+
+.progress-sakura::-webkit-progress-value {
+  background: linear-gradient(90deg, hsl(var(--sakura-pink)), hsl(var(--peach-orange)));
+  border-radius: 9999px;
+  transition: width 0.5s ease;
+}
+
+/* ============================================
+   Loading - Cute Sakura Style
+   ============================================ */
+
+.loading-sakura {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.loading-sakura span {
+  width: 8px; height: 8px;
+  background: hsl(var(--sakura-pink));
+  border-radius: 50%;
+  animation: dotBounce 1.2s ease-in-out infinite both;
+}
+
+.loading-sakura span:nth-child(1) { animation-delay: 0s; background: hsl(var(--sakura-pink)); }
+.loading-sakura span:nth-child(2) { animation-delay: 0.2s; background: hsl(var(--peach-orange)); }
+.loading-sakura span:nth-child(3) { animation-delay: 0.4s; background: hsl(var(--lavender)); }
+
+@keyframes dotBounce {
+  0%, 80%, 100% { transform: scale(0.7); opacity: 0.5; }
+  40% { transform: scale(1.1); opacity: 1; }
+}
+
+/* Spinner - cute ring */
+.spinner-ring {
+  width: 36px; height: 36px;
+  border: 3px solid hsl(var(--sakura-pale));
+  border-top-color: hsl(var(--sakura-pink));
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ============================================
+   Selection & Focus States
+   ============================================ */
+
+::selection {
+  background: hsl(var(--sakura-pink) / 0.2);
+  color: hsl(var(--text-primary));
+}
+
+*:focus-visible {
+  outline: 2px solid hsl(var(--sakura-pink) / 0.6);
+  outline-offset: 2px;
+}
+
+/* ============================================
+   Background Decoration - Sakura Pattern
+   ============================================ */
+
+.bg-sakura-decor {
+  background-image:
+    radial-gradient(circle at 15% 20%, hsl(var(--sakura-pale)) 0%, transparent 40%),
+    radial-gradient(circle at 85% 80%, hsl(var(--lavender-light)) 0%, transparent 40%),
+    radial-gradient(circle at 50% 50%, hsl(var(--peach-light) / 0.3) 0%, transparent 50%);
+}
+
+/* ============================================
+   Utility Classes
+   ============================================ */
+
+/* Text colors */
+.text-sakura { color: hsl(var(--sakura-pink)); }
+.text-peach { color: hsl(var(--peach-orange)); }
+.text-lavender { color: hsl(var(--lavender)); }
+.text-sky { color: hsl(var(--sky-blue)); }
+.text-mint { color: hsl(var(--mint-green)); }
+.text-danger { color: hsl(0 75% 55%); }
+
+/* Bg colors */
+.bg-sakura { background-color: hsl(var(--sakura-pink)); }
+.bg-peach { background-color: hsl(var(--peach-orange)); }
+.bg-lavender { background-color: hsl(var(--lavender)); }
+
+/* Honkai naming aliases (for backward compat) */
+.text-cyber { color: hsl(var(--sakura-pink)); }
+.text-gold { color: hsl(var(--peach-orange)); }
+.text-ark { color: hsl(15 80% 62%); }
+.text-void { color: hsl(var(--lavender)); }
+.text-honkai-gold { color: hsl(var(--peach-orange)); }
+
+.bg-tech-deep { background: hsl(var(--bg-warm)); }
+
+/* ============================================
+   Status Indicator
+   ============================================ */
+
+.status-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+}
+
+.status-dot.online {
+  background: hsl(var(--mint-green));
+  box-shadow: 0 0 8px hsl(var(--mint-green) / 0.5);
+}
+
+.status-dot.offline {
+  background: hsl(var(--text-muted));
+}
+
+.status-dot.active {
+  background: hsl(var(--sakura-pink));
+  box-shadow: 0 0 8px hsl(var(--sakura-pink) / 0.5);
+  animation: pulse-soft 2s ease-in-out infinite;
+}
+
+/* ============================================
+   Misc Utility
+   ============================================ */
+
+.line-clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+.writing-mode-vertical {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+}
+
+/* Custom scrollbar for goals dashboard */
+.goals-dashboard ::-webkit-scrollbar {
+  width: 4px;
+}
+
+.goals-dashboard ::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.goals-dashboard ::-webkit-scrollbar-thumb {
+  background: hsl(var(--sakura-light));
+  border-radius: 99px;
+}
+
+.goals-dashboard ::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--sakura-pink));
+}
+
+/* Corner blink for compat */
+.animate-corner-blink {
+  animation: pulse-soft 2s ease-in-out infinite;
+}
+
+/* Neon compat aliases */
+.animate-neon { animation: pulse-soft 2.5s ease-in-out infinite; }
+.animate-gold { animation: pulse-soft 2s ease-in-out infinite; }
+
+/* Font tech - compat alias */
+.font-tech, .font-display {
+  font-family: 'Nunito', 'Noto Sans SC', sans-serif;
+  letter-spacing: 0.02em;
+}
+
+/* Grid overlay compat (hidden in sakura theme) */
+.grid-overlay {
+  display: none;
+}
+
+/* Void purple compat */
+.text-void-purple { color: hsl(var(--lavender)); }
+.bg-void { background-color: hsl(var(--lavender)); }
+.text-void { color: hsl(var(--lavender)); }
+
+/* Honkai gold compat */
+.text-honkai-gold { color: hsl(var(--peach-orange)); }
+.bg-honkai-gold { background-color: hsl(var(--peach-orange)); }
+
+/* Cyber compat */
+.text-cyber { color: hsl(var(--sakura-pink)); }
+.bg-cyber { background-color: hsl(var(--sakura-pink)); }
+.border-cyber { border-color: hsl(var(--sakura-pink)); }
+
+/* bg-bg-* compat */
+.bg-bg-deep {
+  background-color: hsl(var(--bg-warm));
+}
+.bg-bg-surface {
+  background-color: hsl(var(--bg-surface));
+}
+.bg-bg-elevated {
+  background-color: hsl(340 28% 97%);
+}
+
+/* border-subtle compat */
+.border-border-subtle {
+  border-color: hsl(var(--border-subtle));
+}
+
+/* text-text-* compat */
+.text-text-primary { color: hsl(var(--text-primary)); }
+.text-text-secondary { color: hsl(var(--text-secondary)); }
+.text-text-muted { color: hsl(var(--text-muted)); }
+.text-text-accent { color: hsl(var(--text-accent)); }
+
+/* ============================================
+   Bottom Tab Bar - Safe Area & Support
+   ============================================ */
+
+.safe-area-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Prevent content from being hidden behind bottom nav */
+body {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* ============================================
+   Alice Room - 温馨暖粉对话房间样式
+   ============================================ */
+
+/* 对话框 - 暖白半透明玻璃拟态 */
+.dialog-box-gal {
+  background: rgba(255, 250, 247, 0.92);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(220, 170, 150, 0.3);
+  border-radius: 1.5rem 1.5rem 1rem 1rem;
+  box-shadow:
+    0 12px 40px rgba(180, 130, 110, 0.15),
+    0 4px 12px rgba(200, 150, 130, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+
+/* 角色名标签 - 樱花粉渐变 */
+.character-name-badge {
+  display: inline-block;
+  padding: 0.2rem 0.9rem;
+  border-radius: 9999px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  background: linear-gradient(135deg, #e8899a, #d4708a);
+  color: white;
+  text-shadow: 0 1px 2px rgba(180, 80, 100, 0.3);
+  box-shadow: 0 2px 8px rgba(220, 120, 140, 0.25);
+}
+
+/* 打字光标闪烁 */
+.typewriter-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 1.1em;
+  margin-left: 1px;
+  vertical-align: middle;
+  background: currentColor;
+  animation: cursor-blink 1s step-end infinite;
+}
+
+@keyframes cursor-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+/* 继续指示器弹跳 */
+.continue-arrow {
+  position: absolute;
+  bottom: 0.75rem;
+  right: 1.5rem;
+  animation: continue-bounce 1.5s ease-in-out infinite;
+}
+
+@keyframes continue-bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(4px); }
+}
+
+/* 角色立绘呼吸动画 */
+.character-sprite {
+  animation: breathe 4s ease-in-out infinite;
+}
+
+@keyframes breathe {
+  0%, 100% { transform: scale(1) translateY(0); }
+  50% { transform: scale(1.003) translateY(-3px); }
+}
+
+/* 输入框浅色主题 placeholder */
+input[placeholder="与艾莉丝交谈..."]::placeholder {
+  color: rgba(160, 120, 100, 0.45);
+}

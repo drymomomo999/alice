@@ -1,0 +1,48 @@
+# Dependencies
+node_modules
+.bun
+.pnpm
+.npm
+.yarn
+yarn-error.log
+
+# Environment variables (NEVER commit real API keys!)
+.env
+.env.local
+.env.production
+
+# Build output
+dist
+dist-ssr
+*.local
+
+# Dev output logs
+dev-output.txt
+dev-output.txt.error
+dev-server-output.txt
+dev-server-output.txt.error
+vite-output.txt
+vite-output.txt.error
+vite-node-output.txt
+vite-node-output.txt.error
+
+# Supabase local development files
+supabase/.temp
+supabase/config.toml
+supabase/.branches
+supabase/.phases
+
+# Build cache
+.tsbuildinfo
+*.tsbuildinfo
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
