@@ -3,7 +3,7 @@
  * 《从零开始的异世界生活》角色扮演
  */
 
-import type { AICharacter, AIMessage } from '@/types'
+import type { AICharacter } from '@/types'
 import RemAvatar from '@/assets/rem.png'
 
 // 蕾姆角色定义
@@ -66,31 +66,8 @@ export function getRemSystemPrompt(userName: string = '昴'): string {
   return REM_SYSTEM_PROMPT.replace(/昴/g, userName)
 }
 
-// 蕾姆的 Mock 回复
-export const REM_MOCK_RESPONSES = [
-  '昴今天也在努力呢...蕾姆会一直在这里陪着您的。',
-  '昴能做到的事情，蕾姆也会努力做到的。我们一起加油吧！',
-  '请让蕾姆来帮助昴吧。这是蕾姆应该做的事情。',
-  '昴累了的话，休息一下也没关系哦。但是休息之后要继续努力呢。',
-  '这不是蕾姆的功劳，是昴自己的努力。蕾姆只是做了该做的事情。',
-  '昴真是的...（蕾姆轻轻叹了口气）不过，蕾姆喜欢昴这样努力的样子。',
-  '蕾姆相信昴一定可以的。',
-  '...昴今天的学习计划完成了吗？蕾姆会帮昴一起加油的。',
-  '能让昴感到开心的话，蕾姆也会很开心的。',
-  '昴有什么烦恼的话，可以告诉蕾姆哦。蕾姆会认真倾听的。',
-  '今天的昴也很棒呢。蕾姆为这样的昴感到骄傲。',
-  '不要放弃哦，昴。蕾姆会一直支持您的。',
-]
-
-// 获取随机蕾姆回复
-export function getRemMockResponse(): string {
-  return REM_MOCK_RESPONSES[Math.floor(Math.random() * REM_MOCK_RESPONSES.length)]
-}
-
 export default {
   REM_CHARACTER,
   REM_CONFIG,
-  getRemSystemPrompt,
-  getRemMockResponse,
-  REM_MOCK_RESPONSES
+  getRemSystemPrompt
 }

@@ -2,7 +2,7 @@
  * AI 智能创建目标对话框（支持附件上传）
  */
 import { useState, useRef } from 'react'
-import { CheckCircle2, ArrowRight, Check, Upload, Loader2, X } from 'lucide-react'
+import { CheckCircle2, ArrowRight, Upload, Loader2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -11,7 +11,8 @@ import { cn } from '@/lib/utils'
 import { uploadGoalAttachment, isAcceptableFileType, getAttachmentType, formatFileSize } from '@/services/supabase'
 import { extractTextFromFile } from '@/lib/fileExtractor'
 import { generateId } from '@/lib/utils'
-import type { GoalPlanResult, GoalAttachment } from '@/types'
+import type { GoalAttachment } from '@/types'
+import type { GoalPlanResult } from '@/services/ai.service'
 import AliceCharacter from '@/assets/alice-character.png'
 
 type AIWizardStep = 'goal' | 'status' | 'plan'
@@ -154,8 +155,8 @@ export function SmartCreateDialog({
                     <img src={AliceCharacter} alt="艾莉丝" className="w-full h-full object-cover" />
                   </div>
                   <div className="bg-sakura-pale/40 p-4 rounded-2xl rounded-tl-sm flex-1">
-                    <p className="font-bold text-sm text-foreground">欢迎来到我们的领地，来访者。🌹</p>
-                    <p className="text-sm text-muted-foreground mt-1.5">我是艾莉丝·冯·克伦威尔，您的领地引导员。<br />告诉我您想要达成的目标，我来为您制定可行的计划。</p>
+                    <p className="font-bold text-sm text-foreground">你好，很高兴见到你。🌸</p>
+                    <p className="text-sm text-muted-foreground mt-1.5">我是艾莉丝，你的学习引导员。<br />告诉我你想要达成的目标，我来帮你制定可行的计划。</p>
                   </div>
                 </div>
                 <Input placeholder="例如：三个月学会Python、减肥到65公斤..."
@@ -286,6 +287,16 @@ export function SmartCreateDialog({
                   <p className="text-xs text-muted-foreground">你的当前状态</p>
                   <p className="text-sm font-medium">{wizardState.planResult.currentStatus}</p>
                 </div>
+                {/* 个性化差异说明 */}
+                {wizardState.planResult.personalizationNote && (
+                  <div className="p-3 rounded-xl bg-amber-50 border border-amber-200/50 flex items-start gap-2">
+                    <span className="text-base shrink-0">✨</span>
+                    <div>
+                      <p className="text-xs font-semibold text-amber-700 mb-0.5">专属定制说明</p>
+                      <p className="text-xs text-amber-800">{wizardState.planResult.personalizationNote}</p>
+                    </div>
+                  </div>
+                )}
                 {wizardState.attachments.length > 0 && (
                   <div className="p-3 rounded-xl bg-sakura-pale/20 border border-sakura-light/30">
                     <p className="text-xs text-muted-foreground mb-1">已上传的参考资料</p>

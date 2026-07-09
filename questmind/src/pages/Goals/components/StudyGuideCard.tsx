@@ -1,23 +1,36 @@
 /**
  * AI 学习指南概览卡片
  *
- * 在每日任务列表上方展示，汇总今天需要掌握的核心知识。
+ * 在任务列表上方展示，汇总需要掌握的核心知识。
  * 调用 generateStudySummary() 生成内容，支持折叠/展开。
+ *
+ * 改进（2026-06-01）：新增 documentTexts prop，把附件文档传入 AI，
+ * 让指南基于真实资料内容而不是泛化猜测。
  */
 import { useState, useEffect } from 'react'
 import { ChevronDown, ChevronUp, Sparkles, Loader2 } from 'lucide-react'
 import { generateStudySummary } from '@/services/ai.service'
 import { useUserStore } from '@/store'
+import { MarkdownRenderer } from '@/components/MarkdownRenderer'
 import type { DailyTask } from '@/types'
 import { cn } from '@/lib/utils'
 
 interface StudyGuideCardProps {
   goalTitle: string
   goalContext?: string
+  goalCategory?: string
+  /** 附件文档内容（可传多个），让 AI 基于真实资料生成精准指南 */
+  documentTexts?: { name: string; text: string }[]
   dailyTasks: DailyTask[]
 }
 
-export function StudyGuideCard({ goalTitle, goalContext, dailyTasks }: StudyGuideCardProps) {
+export function StudyGuideCard({
+  goalTitle,
+  goalContext,
+  goalCategory,
+  documentTexts,
+  dailyTasks,
+}: StudyGuideCardProps) {
   const { user } = useUserStore()
   const [isExpanded, setIsExpanded] = useState(true)
   const [summary, setSummary] = useState<string | null>(null)
@@ -37,6 +50,8 @@ export function StudyGuideCard({ goalTitle, goalContext, dailyTasks }: StudyGuid
         const result = await generateStudySummary({
           goalTitle,
           goalContext,
+          goalCategory,
+          documentTexts,
           dailyTasks,
           userName: user?.nickname || '来访者',
         })
@@ -56,7 +71,11 @@ export function StudyGuideCard({ goalTitle, goalContext, dailyTasks }: StudyGuid
 
     fetchSummary()
     return () => { cancelled = true }
-  }, [goalTitle, goalContext, dailyTasks, user?.nickname])
+  // documentTexts 用 JSON 字符串化避免引用变化导致无限触发
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [goalTitle, goalContext, goalCategory, dailyTasks, user?.nickname,
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      JSON.stringify(documentTexts?.map(d => d.name))])
 
   // 没有任务时不显示
   if (dailyTasks.length === 0) return null
@@ -73,7 +92,10 @@ export function StudyGuideCard({ goalTitle, goalContext, dailyTasks }: StudyGuid
       >
         <span className="text-xs font-bold text-foreground flex items-center gap-1.5">
           <Sparkles className="w-3.5 h-3.5 text-lavender" />
-          今日学习指南
+          AI 学习指南
+          {documentTexts && documentTexts.length > 0 && (
+            <span className="text-[10px] text-lavender/60 font-normal">· 基于上传资料</span>
+          )}
         </span>
         {isExpanded ? (
           <ChevronUp className="w-3.5 h-3.5 text-muted-foreground" />
@@ -88,12 +110,14 @@ export function StudyGuideCard({ goalTitle, goalContext, dailyTasks }: StudyGuid
           {isLoading ? (
             <div className="flex items-center gap-2 py-2">
               <Loader2 className="w-3.5 h-3.5 animate-spin text-lavender" />
-              <span className="text-[11px] text-muted-foreground">正在整理学习要点...</span>
+              <span className="text-[11px] text-muted-foreground">
+                {documentTexts && documentTexts.length > 0
+                  ? '正在读取资料，整理学习要点...'
+                  : '正在整理学习要点...'}
+              </span>
             </div>
           ) : summary ? (
-            <p className="text-xs text-foreground/80 leading-relaxed whitespace-pre-wrap">
-              {summary}
-            </p>
+            <MarkdownRenderer content={summary} className="text-xs" />
           ) : (
             <p className="text-[11px] text-muted-foreground">点击任务上的 ✨ 按钮获取详细学习指导</p>
           )}

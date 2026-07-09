@@ -1,0 +1,55 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "QuestMind",
+  "version": "0.1.0",
+  "identifier": "com.questmind.app",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:5173",
+    "beforeDevCommand": "node scripts/dev-server.mjs",
+    "beforeBuildCommand": "npm run build"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "QuestMind",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 900,
+        "minHeight": 600,
+        "resizable": true,
+        "decorations": true,
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://njecytkavzhrmlgzwwkm.supabase.co https://*.supabase.co; font-src 'self' data:; frame-src 'self' blob:; connect-src 'self' https://*.supabase.co https://api.deepseek.com wss://*.supabase.co; worker-src 'self' blob:"
+    },
+    "macOSPrivateApi": false
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "category": "Education",
+    "shortDescription": "QuestMind - AI 陪伴式学习平台",
+    "longDescription": "QuestMind 是一款 AI 陪伴式学习平台，通过 Goals 目标管理、艾莉丝 AI 助手、游戏化系统等功能，帮助用户高效达成学习目标。",
+    "publisher": "QuestMind",
+    "homepage": "https://questmind.app",
+    "macOS": {
+      "frameworks": [],
+      "minimumSystemVersion": "11.0",
+      "exceptionDomain": "",
+      "signingIdentity": null,
+      "providerShortName": null,
+      "entitlements": null,
+      "files": {}
+    }
+  }
+}

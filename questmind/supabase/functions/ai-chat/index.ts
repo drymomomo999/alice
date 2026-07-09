@@ -69,7 +69,7 @@ serve(async (req: Request) => {
       body: JSON.stringify({
         model: 'deepseek-chat',
         messages: body.messages,
-        max_tokens: body.max_tokens ?? 300,
+        max_tokens: body.max_tokens ?? 8192,
         temperature: body.temperature ?? 0.8,
       }),
     })
@@ -87,6 +87,13 @@ serve(async (req: Request) => {
     }
 
     const data = await response.json()
+
+    // deepseek-v4-flash 等推理模型的回复在 reasoning_content 而非 content
+    // 统一取 content，fallback 到 reasoning_content
+    const rawMessage = data?.choices?.[0]?.message
+    if (rawMessage && !rawMessage.content && rawMessage.reasoning_content) {
+      data.choices[0].message.content = rawMessage.reasoning_content
+    }
 
     return new Response(JSON.stringify(data), {
       status: 200,

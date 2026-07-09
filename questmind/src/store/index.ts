@@ -4,7 +4,8 @@ import type {
   User,
   Goal,
   AIMessage,
-  AICharacter
+  AICharacter,
+  SubGoal
 } from '@/types'
 import { generateId } from '@/lib/utils'
 import * as db from '@/services/supabase'
@@ -27,10 +28,6 @@ interface UserState {
   loadUser: (authId: string) => Promise<void>
   setUser: (user: User | null) => void
   updateUser: (updates: Partial<User>) => void
-  addCoins: (amount: number) => void
-  addGems: (amount: number) => void
-  incrementStreak: () => void
-  resetStreak: () => void
   login: () => void
   logout: () => Promise<void>
   loginDemo: () => void
@@ -101,40 +98,6 @@ export const useUserStore = create<UserState>()(
         }
       },
 
-      addCoins: (amount) => {
-        set((state) => ({
-          user: state.user ? { ...state.user, coins: state.user.coins + amount } : null
-        }))
-        // 同步到数据库
-        const user = get().user
-        if (user && !get().isDemo && amount !== 0) {
-          db.updateUserCoins(user.id, amount, '本地变更')
-        }
-      },
-
-      addGems: (amount) => {
-        set((state) => ({
-          user: state.user ? { ...state.user, gems: state.user.gems + amount } : null
-        }))
-      },
-
-      incrementStreak: () => {
-        set((state) => ({
-          user: state.user ? { ...state.user, streak: state.user.streak + 1 } : null
-        }))
-        // 同步到数据库并更新连续天数
-        const user = get().user
-        if (user && !get().isDemo) {
-          db.updateUserStreak(user.id)
-        }
-      },
-
-      resetStreak: () => {
-        set((state) => ({
-          user: state.user ? { ...state.user, streak: 0 } : null
-        }))
-      },
-
       login: () => set({ isAuthenticated: true, isDemo: false, authChecked: true }),
 
       logout: async () => {
@@ -143,6 +106,12 @@ export const useUserStore = create<UserState>()(
         } catch (error) {
           console.error('Logout error:', error)
         }
+        // 清除所有持久化 store，防止账号切换时旧数据残留
+        useGoalsStore.getState().setGoals([])
+        useGoalsStore.setState({ currentGoal: null })
+        useAIChatStore.getState().clearAllMessages()
+        localStorage.removeItem('questmind-goals')
+        localStorage.removeItem('questmind-ai-chat')
         set({ user: null, isAuthenticated: false, isDemo: false, authChecked: true })
       },
 
@@ -151,9 +120,6 @@ export const useUserStore = create<UserState>()(
           id: 'demo-user',
           email: 'demo@questmind.app',
           nickname: '学习达人',
-          coins: 1500,
-          gems: 50,
-          streak: 7,
           createdAt: new Date().toISOString()
         },
         isAuthenticated: true,
@@ -163,7 +129,11 @@ export const useUserStore = create<UserState>()(
 
       setAuthChecked: (checked) => set({ authChecked: checked }),
 
-      clearAuth: () => set({ user: null, isAuthenticated: false, isDemo: false, authChecked: true }),
+      clearAuth: () => {
+        useGoalsStore.getState().setGoals([])
+        useGoalsStore.setState({ currentGoal: null })
+        set({ user: null, isAuthenticated: false, isDemo: false, authChecked: true })
+      },
 
       syncToDb: async () => {
         const user = get().user
@@ -198,7 +168,7 @@ export const useUserStore = create<UserState>()(
               // 创建成功后再次执行 onboarding 更新
               updatedUser = await db.completeUserOnboarding(updatedUser.id, data)
               // 同步 store 中的 user.id 为数据库真实 ID
-              set({ user: { ...updatedUser, id: updatedUser.id } })
+              set({ user: { ...updatedUser!, id: updatedUser!.id } })
             }
           }
 
@@ -236,7 +206,7 @@ interface GoalsState {
 
   // 同步操作
   setGoals: (goals: Goal[]) => void
-  addGoal: (goal: Omit<Goal, 'id' | 'userId' | 'createdAt' | 'updatedAt' | 'subGoals' | 'progress'>) => Promise<Goal | null>
+  addGoal: (goal: Omit<Goal, 'id' | 'userId' | 'createdAt' | 'updatedAt' | 'progress'> & { subGoals?: SubGoal[] }) => Promise<Goal | null>
   updateGoal: (goalId: string, updates: Partial<Goal>) => void
   deleteGoal: (goalId: string) => Promise<void>
   setCurrentGoal: (goal: Goal | null) => void
@@ -630,6 +600,8 @@ interface AIChatState {
   messages: Record<AICharacter, AIMessage[]>
   activeCharacter: AICharacter
   isLoading: boolean
+  // 各角色最后一次访问时间（用于"记忆感"问候）
+  lastVisit: Partial<Record<AICharacter, string>>
 
   // 数据加载
   loadMessages: (userId: string, character: AICharacter) => Promise<void>
@@ -637,12 +609,15 @@ interface AIChatState {
   setActiveCharacter: (character: AICharacter) => void
   addMessage: (character: AICharacter, message: Omit<AIMessage, 'id' | 'timestamp'>) => void
   clearMessages: (character: AICharacter) => void
+  clearAllMessages: () => void
   saveToDb: (userId: string, character: AICharacter, content: string, isUser: boolean) => Promise<void>
+  // 记录本次访问时间
+  markVisit: (character: AICharacter) => void
 }
 
 export const useAIChatStore = create<AIChatState>()(
   persist(
-    (set, get) => ({
+    (set) => ({
       messages: {
         xiaoSi: [],
         coach: [],
@@ -652,6 +627,7 @@ export const useAIChatStore = create<AIChatState>()(
       },
       activeCharacter: 'xiaoSi',
       isLoading: false,
+      lastVisit: {},
 
       loadMessages: async (userId, character) => {
         set({ isLoading: true })
@@ -686,6 +662,11 @@ export const useAIChatStore = create<AIChatState>()(
         }
       })),
 
+      clearAllMessages: () => set({
+        messages: { xiaoSi: [], coach: [], friend: [], rem: [], alice: [] },
+        lastVisit: {}
+      }),
+
       clearMessages: (character) => set((state) => ({
         messages: {
           ...state.messages,
@@ -695,7 +676,14 @@ export const useAIChatStore = create<AIChatState>()(
 
       saveToDb: async (userId, character, content, isUser) => {
         await sync.saveAIMessageToDb(userId, character, content, isUser)
-      }
+      },
+
+      markVisit: (character) => set((state) => ({
+        lastVisit: {
+          ...state.lastVisit,
+          [character]: new Date().toISOString()
+        }
+      }))
     }),
     {
       name: 'questmind-ai-chat'

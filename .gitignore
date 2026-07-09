@@ -1,0 +1,10 @@
+# Local agent memory and generated planning artifacts
+.workbuddy/
+questmind/.workbuddy/
+docx_gen/
+generated-images/
+questmind-project-plan.docx
+
+# Windows accidental reserved-name files
+nul
+**/nul

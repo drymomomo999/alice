@@ -4,8 +4,7 @@
  */
 
 import * as db from './supabase'
-import type { User, Goal } from '@/types'
-import { generateId } from '@/lib/utils'
+import type { User, Goal, SubGoal } from '@/types'
 
 // 同步状态
 export interface SyncStatus {
@@ -99,7 +98,7 @@ export async function loadGoalsFromDb(userId: string): Promise<Goal[]> {
  */
 export async function syncGoalToDb(
   userId: string,
-  goal: Omit<Goal, 'id' | 'userId' | 'createdAt' | 'updatedAt' | 'subGoals' | 'progress'>
+  goal: Omit<Goal, 'id' | 'userId' | 'createdAt' | 'updatedAt' | 'progress'> & { subGoals?: SubGoal[] }
 ): Promise<Goal | null> {
   try {
     const newGoal = await db.createGoal(userId, goal)
@@ -235,10 +234,8 @@ export async function saveAIMessageToDb(
 ): Promise<boolean> {
   try {
     await db.saveAIMessage(userId, {
-      id: generateId(),
       characterId: characterId as any,
       content,
-      timestamp: new Date().toISOString(),
       isUser
     })
     return true

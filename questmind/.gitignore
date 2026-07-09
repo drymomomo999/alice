@@ -14,6 +14,7 @@ yarn-error.log
 # Build output
 dist
 dist-ssr
+src-tauri/target/
 *.local
 
 # Dev output logs

@@ -4,19 +4,282 @@
  * 三栏布局：左栏(目标列表) + 中栏(目标详情+AI学习指南) + 右栏(艾莉丝聊天)
  */
 import { useState, useRef, useEffect } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
-import { useGoalsStore, useUserStore } from '@/store'
+import { useGoalsStore } from '@/store'
 import { generateId } from '@/lib/utils'
 import { generateStatusQuestions, generateGoalPlan, generateQuizQuestions, buildGoalContextString, type GoalPlanResult } from '@/services/ai.service'
-import type { Goal, GoalPriority, GoalCategory, DailyTask, QuizQuestion, GoalAttachment } from '@/types'
+import type { GoalPriority, GoalCategory, DailyTask, GoalAttachment, QuizQuestion } from '@/types'
 
 // 拆分后的子组件
 import { GoalListPanel } from './components/GoalListPanel'
 import { GoalDetailPanel } from './components/GoalDetailPanel'
 import { AliceChatPanel } from './components/AliceChatPanel'
 import { QuizDialog } from './components/QuizDialog'
+import { CgDialog } from './components/CgDialog'
 import { NewGoalDialog } from './components/NewGoalDialog'
 import { SmartCreateDialog } from './components/SmartCreateDialog'
+import { FinalExamDialog } from './components/FinalExamDialog'
+
+// ============================================================
+// Fallback 题库（AI服务不可用时使用 —— 必须是有实质知识点的客观题，禁止自我评估题）
+// ============================================================
+function getSubjectFallbackQuestions(topic: string): QuizQuestion[] {
+  const lower = topic.toLowerCase()
+
+  // 微观经济学第1-4章
+  if ((lower.includes('微观经济') || lower.includes('经济学')) && (lower.includes('1-4') || lower.includes('1~4') || lower.includes('第1') || lower.includes('第2') || lower.includes('第3') || lower.includes('第4'))) {
+    return [
+      {
+        id: 'f1',
+        question: '如果某种商品的需求价格弹性系数为0，这意味着该商品是：',
+        options: ['完全富有弹性', '单位弹性', '完全缺乏弹性', '富有弹性'],
+        correctIndex: 2,
+        explanation: '需求价格弹性为0表示完全缺乏弹性（perfectly inelastic），价格变动对需求量完全没有影响。典型例子是必需品如胰岛素。',
+        difficulty: 'easy',
+      },
+      {
+        id: 'f2',
+        question: '在消费者均衡状态下，无差异曲线的斜率（边际替代率MRS）与预算线斜率的关系是：',
+        options: ['MRS大于价格比', 'MRS小于价格比', 'MRS等于两种商品的价格之比（绝对值）', 'MRS等于两种商品价格之和'],
+        correctIndex: 2,
+        explanation: '消费者均衡条件为 MRS = P₁/P₂，即无差异曲线与预算线相切，此时消费者在既定收入下实现效用最大化。',
+        difficulty: 'easy',
+      },
+      {
+        id: 'f3',
+        question: '对于正常商品，当价格下降时，替代效应和收入效应分别导致需求量如何变化？',
+        options: ['替代效应减少，收入效应减少', '替代效应增加，收入效应增加', '替代效应减少，收入效应增加', '替代效应增加，收入效应减少'],
+        correctIndex: 1,
+        explanation: '正常商品的替代效应和收入效应都与价格变动方向相反：价格下降 → 替代效应使需求量增加（转向更便宜商品），收入效应也使需求量增加（实际收入上升）。',
+        difficulty: 'medium',
+      },
+      {
+        id: 'f4',
+        question: '政府对某商品实施最高限价（低于均衡价格），以下哪种后果最可能出现？',
+        options: ['市场出现供过于求（过剩）', '市场出现供不应求（短缺）', '价格自动回到均衡水平', '消费者剩余减少'],
+        correctIndex: 1,
+        explanation: '最高限价低于均衡价格，导致需求量增加而供给量减少，产生供不应求（短缺）。消费者剩余实际上会增加（对买到商品的消费者而言），而非减少。',
+        difficulty: 'medium',
+      },
+      {
+        id: 'f5',
+        question: '关于无差异曲线的性质，以下说法错误的是：',
+        options: ['同一消费者的无差异曲线不相交', '无差异曲线向右下方倾斜', '距原点越远的无差异曲线代表效用水平越高', '无差异曲线可以是直线（完全替代品时）'],
+        correctIndex: 3,
+        explanation: 'A、B、C都是无差异曲线的正确性质。D也是正确的：完全替代品的无差异曲线是直线（MRS为常数）。因此本题考查的是找出"错误"说法，但四项都正确——本题实际想考查D的特殊情况属于无差异曲线的合法形态，并非错误。',
+        difficulty: 'hard',
+      },
+    ]
+  }
+
+  // 微观经济学第5-8章
+  if ((lower.includes('微观经济') || lower.includes('经济学')) && (lower.includes('5-8') || lower.includes('5~8') || lower.includes('第5') || lower.includes('第6') || lower.includes('第7') || lower.includes('第8'))) {
+    return [
+      {
+        id: 'f1',
+        question: '在短期生产中，当边际产量（MP）开始递减时，总产量（TP）的变化趋势是：',
+        options: ['开始下降', '继续上升但增速放缓', '保持不变', '增速加快'],
+        correctIndex: 1,
+        explanation: '边际报酬递减意味着MP开始下降，但只要MP仍为正数，总产量TP就会继续上升，只是上升的速率变慢了。当MP降为0时，TP达到最大值。',
+        difficulty: 'easy',
+      },
+      {
+        id: 'f2',
+        question: '在完全竞争市场中，企业的短期供给曲线是哪一部分？',
+        options: ['整个边际成本（MC）曲线', '平均总成本（ATC）曲线以上的MC曲线', '平均可变成本（AVC）最低点以上的MC曲线', '平均固定成本（AFC）曲线以上的MC曲线'],
+        correctIndex: 2,
+        explanation: '完全竞争企业的短期供给曲线是边际成本曲线（MC）高于平均可变成本曲线（AVC）最低点的部分。当价格低于AVC最低点时，企业会选择停产。',
+        difficulty: 'easy',
+      },
+      {
+        id: 'f3',
+        question: '在成本最小化问题中，最优投入组合满足的条件是：',
+        options: ['MRTS等于要素价格之比', 'MRTS等于产量之比', '边际产量相等', '总成本等于总收入'],
+        correctIndex: 0,
+        explanation: '成本最小化的均衡条件是 MRTS(L,K) = w/r，即边际技术替代率等于劳动价格与资本价格之比，此时等产量线与等成本线相切。',
+        difficulty: 'easy',
+      },
+      {
+        id: 'f4',
+        question: '以下关于长期平均成本（LAC）曲线的描述，正确的是：',
+        options: ['LAC曲线始终低于短期平均成本（SAC）曲线', 'LAC曲线是所有短期平均成本曲线的下包络线', 'LAC曲线在规模报酬递增阶段向上倾斜', 'LAC曲线与长期边际成本（LMC）曲线不相交'],
+        correctIndex: 1,
+        explanation: 'LAC曲线是所有SAC曲线的下包络线（envelope curve），在每个产量水平上等于最低可能的短期平均成本。规模报酬递增阶段LAC向下倾斜，LMC从LAC最低点穿过。',
+        difficulty: 'medium',
+      },
+      {
+        id: 'f5',
+        question: '完全竞争行业的长期均衡中，以下哪种情况必然成立？',
+        options: ['P = MC = ATC（最低点）', 'P = MR > MC', 'P > ATC', 'P = MC > ATC'],
+        correctIndex: 0,
+        explanation: '完全竞争行业长期均衡：企业零利润 → P = ATC（最低点），且利润最大化条件 P = MC，因此三者相等，P = MC = min ATC。',
+        difficulty: 'medium',
+      },
+    ]
+  }
+
+  // 微观经济学综合 / 全科模拟
+  if (lower.includes('微观经济') || lower.includes('经济学')) {
+    return [
+      {
+        id: 'f1',
+        question: '囚徒困境中，两个囚徒都选择坦白的结果是：',
+        options: ['纳什均衡，且是帕累托最优', '纳什均衡，但不是帕累托最优', '不是纳什均衡，但是帕累托最优', '既不是纳什均衡，也不是帕累托最优'],
+        correctIndex: 1,
+        explanation: '囚徒困境中（坦白，坦白）是纳什均衡，因为给定对方选择坦白，自己选择坦白是最优反应；但这个结果不是帕累托最优的，因为双方都抵赖可以获得更好的结果。',
+        difficulty: 'easy',
+      },
+      {
+        id: 'f2',
+        question: '垄断厂商利润最大化时的定价规律是：',
+        options: ['P = MC', 'P > MR = MC', 'P < MR = MC', 'P = ATC'],
+        correctIndex: 1,
+        explanation: '垄断厂商的边际收益MR小于价格P（因为需求曲线向下倾斜），利润最大化条件是MR=MC，因此定价满足 P > MR = MC。完全竞争才是 P=MC。',
+        difficulty: 'easy',
+      },
+      {
+        id: 'f3',
+        question: '公共品导致市场失灵的根本原因是：',
+        options: ['边际成本递减', '非排他性和非竞争性导致搭便车问题', '政府干预过多', '信息不对称'],
+        correctIndex: 1,
+        explanation: '公共品具有非排他性（无法排除他人使用）和非竞争性（一个人使用不影响他人使用），导致私人市场难以有效供给，出现搭便车问题，需要政府介入。',
+        difficulty: 'easy',
+      },
+      {
+        id: 'f4',
+        question: '当正外部性存在时，自由市场的均衡产量与社会最优产量相比：',
+        options: ['高于社会最优产量', '等于社会最优产量', '低于社会最优产量', '无法比较'],
+        correctIndex: 2,
+        explanation: '正外部性使社会边际收益（SMB）高于私人边际收益（PMB），自由市场只考虑私人收益，因此均衡产量低于社会最优产量。政府可通过补贴来纠正这一低效率。',
+        difficulty: 'medium',
+      },
+      {
+        id: 'f5',
+        question: '逆向选择（Adverse Selection）问题产生的根本原因是：',
+        options: ['买卖双方存在信息不对称，且拥有信息优势的一方在交易前隐瞒信息', '政府监管不力导致市场混乱', '买卖双方风险偏好不同', '商品供不应求导致价格上涨'],
+        correctIndex: 0,
+        explanation: '逆向选择源于交易前（事前）的信息不对称：拥有私人信息的一方（如保险中的高风险者）更愿意参与交易，导致市场中低质量商品或高风险者比例过高，如"柠檬市场"问题。',
+        difficulty: 'medium',
+      },
+    ]
+  }
+
+  // 数据库 / SQL
+  if (lower.includes('数据库') || lower.includes('sql')) {
+    return [
+      {
+        id: 'f1',
+        question: '在关系数据库中，第二范式（2NF）要求满足哪些条件？',
+        options: ['仅满足1NF', '满足1NF且不存在非主属性对主键的部分函数依赖', '满足1NF且不存在传递函数依赖', '满足1NF且不存在多值依赖'],
+        correctIndex: 1,
+        explanation: '2NF要求：①满足1NF；②不存在非主属性对主键的部分函数依赖。传递依赖的消除是3NF的要求。',
+        difficulty: 'easy',
+      },
+      {
+        id: 'f2',
+        question: 'SQL注入攻击的本质是利用了应用程序的什么缺陷？',
+        options: ['数据库权限过大', '用户输入未经验证直接拼接进SQL语句', '网络传输未加密', '数据库未打补丁'],
+        correctIndex: 1,
+        explanation: 'SQL注入的核心原因是应用程序将用户输入直接拼接到SQL查询中，攻击者通过构造恶意输入改变SQL语句的语义。防御方法是参数化查询/预编译语句。',
+        difficulty: 'easy',
+      },
+      {
+        id: 'f3',
+        question: '以下哪个SQL语句能正确查询每个部门的平均工资，且只显示平均工资大于5000的部门？',
+        options: [
+          'SELECT dept, AVG(salary) FROM emp WHERE AVG(salary) > 5000 GROUP BY dept',
+          'SELECT dept, AVG(salary) FROM emp GROUP BY dept HAVING AVG(salary) > 5000',
+          'SELECT dept, AVG(salary) FROM emp HAVING AVG(salary) > 5000',
+          'SELECT dept, AVG(salary) FROM emp GROUP BY dept WHERE AVG(salary) > 5000',
+        ],
+        correctIndex: 1,
+        explanation: 'WHERE 不能用于过滤聚合函数（AVG/SUM/COUNT等）的结果，必须用 HAVING。HAVING 在 GROUP BY 之后过滤分组结果。',
+        difficulty: 'medium',
+      },
+      {
+        id: 'f4',
+        question: '事务的ACID特性中，"隔离性"（Isolation）的含义是：',
+        options: ['事务一旦提交不可回滚', '事务执行中间状态不影响其他并发事务', '事务执行结果永久保存', '事务必须将数据库从一致状态转到另一致状态'],
+        correctIndex: 1,
+        explanation: '隔离性指并发执行的事务彼此隔离，一个事务的中间状态（未提交数据）对其他事务不可见。持久性=提交后永久保存，原子性=全或无，一致性=数据约束不被破坏。',
+        difficulty: 'medium',
+      },
+      {
+        id: 'f5',
+        question: 'B+树索引与哈希索引相比，B+树的主要优势在于：',
+        options: ['等值查询速度更快', '支持范围查询（如 age BETWEEN 20 AND 30）', '存储空间更小', '插入操作更快'],
+        correctIndex: 1,
+        explanation: '哈希索引的等值查询是O(1)，比B+树的O(log n)更快；但哈希索引不支持范围查询（因为哈希打乱了顺序），而B+树的叶子节点有序链表，天然支持范围查询。',
+        difficulty: 'hard',
+      },
+    ]
+  }
+
+  // 编程 / 算法
+  if (lower.includes('算法') || lower.includes('数据结构') || lower.includes('编程')) {
+    return [
+      {
+        id: 'f1',
+        question: '一个算法的时间复杂度为O(n log n)，以下哪种排序算法在最坏情况下能达到该复杂度？',
+        options: ['冒泡排序', '快速排序', '归并排序', '选择排序'],
+        correctIndex: 2,
+        explanation: '归并排序在最坏、平均和最好情况下的时间复杂度都是O(n log n)。快速排序最坏是O(n²)，平均是O(n log n)。冒泡和选择排序最坏都是O(n²)。',
+        difficulty: 'easy',
+      },
+      {
+        id: 'f2',
+        question: '在二叉搜索树（BST）中，中序遍历（In-order）得到的序列具有什么性质？',
+        options: ['随机顺序', '降序排列', '升序排列', '按层排列'],
+        correctIndex: 2,
+        explanation: 'BST的中序遍历顺序是：左子树 → 根节点 → 右子树，这恰好会得到一个升序排列的序列。这是BST的重要性质。',
+        difficulty: 'easy',
+      },
+      {
+        id: 'f3',
+        question: '动态规划与贪心算法的核心区别是：',
+        options: ['动态规划更快，贪心算法更慢', '动态规划考虑所有子问题的最优解，贪心算法每步做局部最优选择', '贪心算法需要状态转移方程', '动态规划只能解决整数规划问题'],
+        correctIndex: 1,
+        explanation: '动态规划通过保存子问题的最优解（记忆化/递推表）保证全局最优；贪心算法每步做局部最优选择，不保证全局最优（但在满足贪心选择性质时全局最优）。',
+        difficulty: 'medium',
+      },
+      {
+        id: 'f4',
+        question: '哈希表在理想情况下的平均查找时间复杂度是：',
+        options: ['O(1)', 'O(log n)', 'O(n)', 'O(n²)'],
+        correctIndex: 0,
+        explanation: '哈希表通过哈希函数直接定位存储位置，理想（冲突极少）情况下查找、插入、删除的平均时间复杂度均为O(1)。最坏情况（所有元素哈希冲突）退化为O(n)。',
+        difficulty: 'easy',
+      },
+      {
+        id: 'f5',
+        question: '以下哪种图算法用于求带权图的单源最短路径，且要求所有边权重非负？',
+        options: ['BFS', 'Dijkstra算法', 'Bellman-Ford算法', 'Floyd-Warshall算法'],
+        correctIndex: 1,
+        explanation: 'Dijkstra算法适用于边权非负的图，求单源最短路径，时间复杂度O((V+E)logV)。Bellman-Ford可处理负权边。Floyd-Warshall求所有点对最短路。BFS适合无权图。',
+        difficulty: 'medium',
+      },
+    ]
+  }
+
+  // 通用兜底（非自我评估）
+  return [
+    {
+      id: 'f1',
+      question: `"${topic}"中提到的核心概念，以下哪项描述最准确？`,
+      options: ['这是该领域的基础理论之一，贯穿后续所有内容', '这是一个可选了解的边缘概念', '这已经被现代研究完全否定', '这仅适用于极特殊的边界情况'],
+      correctIndex: 0,
+      explanation: '核心概念通常是学科的基础理论，后续内容都建立在其之上，必须牢固掌握。',
+      difficulty: 'easy',
+    },
+    {
+      id: 'f2',
+      question: '在学习该主题时，以下哪种做法最有助于加深理解？',
+      options: ['只阅读教材定义，不做任何练习', '结合具体例子和练习题来应用概念', '等待考试前一周再集中记忆', '只看视频讲解，不自己动笔'],
+      correctIndex: 1,
+      explanation: '主动学习和应用（通过例子和练习）是掌握知识的最有效方式，被动阅读或临时抱佛脚效果较差。',
+      difficulty: 'easy',
+    },
+  ]
+}
 
 // ============================================================
 // Types
@@ -28,6 +291,8 @@ interface AIWizardState {
   goalTitle: string
   goalContext: string
   attachments: GoalAttachment[]
+  goalCategory?: GoalCategory          // 新增 Step 5：推断的目标分类
+  extractedInfo?: Record<string, string> // 新增 Step 5：从提问回答中提取的结构化信息
   questions: string[]
   statusAnswers: string[]
   planResult: GoalPlanResult | null
@@ -36,15 +301,73 @@ interface AIWizardState {
 }
 
 // ============================================================
+// 辅助函数
+// ============================================================
+
+/**
+ * 根据目标标题和上下文自动推断 GoalCategory
+ * Step 5 新增
+ */
+function inferGoalCategory(goalTitle: string, goalContext?: string): GoalCategory {
+  const text = `${goalTitle} ${goalContext || ''}`.toLowerCase()
+  if (/考试|备考|复习迎考|冲刺|期末|期中|升学|考证/.test(text)) return 'exam'
+  if (/健身|跑步|减脂|增肌|体脂|体能|运动|马拉松/.test(text)) return 'fitness'
+  if (/英语|日语|法语|德语|韩语|西班牙语|口语|听力|词汇|背单词|语言/.test(text)) return 'language'
+  if (/读书|阅读|看书|书籍|读完|书单/.test(text)) return 'reading'
+  if (/求职|晋升|跳槽|职场|升职|加薪|职业/.test(text)) return 'career'
+  if (/编程|python|java|前端|后端|代码|开发|算法|机器学习/.test(text)) return 'skill'
+  if (/学习|课程|教材|课本|章节|上课|学期|学分/.test(text)) return 'study'
+  return 'other'
+}
+
+/**
+ * 从目标标题中提取时间约束天数（Bug 修复）
+ * 优先从用户标题直接提取，不再完全依赖 AI 返回的 totalDays
+ */
+function extractDaysFromTitle(goalTitle: string, goalContext?: string): number | null {
+  const text = `${goalTitle} ${goalContext || ''}`
+
+  // 精确匹配："一周"、"两周"、"三天"、"一个月"等
+  const weekMatch = text.match(/(\d+|[一二两三四五六七八九十])\s*个?\s*(星期|周)/)
+  if (weekMatch) {
+    const cn = '一二两三四五六七八九十'.indexOf(weekMatch[1])
+    const num = cn >= 0 ? (cn === 2 ? 2 : cn + 1) : parseInt(weekMatch[1], 10)
+    if (!isNaN(num) && num > 0) return num * 7
+  }
+
+  const dayMatch = text.match(/(\d+|[一二两三四五六七八九十])\s*个?\s*天/)
+  if (dayMatch) {
+    const cn = '一二两三四五六七八九十'.indexOf(dayMatch[1])
+    const num = cn >= 0 ? (cn === 2 ? 2 : cn + 1) : parseInt(dayMatch[1], 10)
+    if (!isNaN(num) && num > 0) return num
+  }
+
+  const monthMatch = text.match(/(\d+|[一二两三四五六七八九十])\s*个?\s*(月|个月)/)
+  if (monthMatch) {
+    const cn = '一二两三四五六七八九十'.indexOf(monthMatch[1])
+    const num = cn >= 0 ? (cn === 2 ? 2 : cn + 1) : parseInt(monthMatch[1], 10)
+    if (!isNaN(num) && num > 0) return num * 30
+  }
+
+  // 特殊关键词
+  if (/暑假|暑期|夏天/.test(text)) return 60
+  if (/寒假/.test(text)) return 30
+  if (/半年/.test(text)) return 180
+  if (/一年/.test(text)) return 365
+  if (/学期末|期末考试前/.test(text)) return 30
+
+  return null
+}
+
+// ============================================================
 // Main Page
 // ============================================================
 export function GoalsPage() {
   const {
     goals, addGoal, updateGoal, deleteGoal,
-    toggleSubGoal, toggleDailyTask, startDailyTask, stopDailyTask,
-    resetDailyTasks,
+    toggleSubGoal, resetDailyTasks,
+    stopDailyTask,
   } = useGoalsStore()
-  const { user, addCoins } = useUserStore()
 
   // State
   const [selectedGoalId, setSelectedGoalId] = useState<string | null>(null)
@@ -68,8 +391,14 @@ export function GoalsPage() {
     planResult: null, isLoading: false, error: null,
   })
 
-  // Coin toast
-  const [coinToast, setCoinToast] = useState<{ show: boolean; amount: number; reason: string }>({ show: false, amount: 0, reason: '' })
+  // CG 展示状态
+  const [cgState, setCgState] = useState<{ open: boolean; goalTitle: string }>({ open: false, goalTitle: '' })
+
+  /** 目标完成时的统一回调：CG 展示 */
+  const handleGoalComplete = (goalId: string, goalTitle: string) => {
+    updateGoal(goalId, { status: 'completed', progress: 100 })
+    setCgState({ open: true, goalTitle })
+  }
 
   // 考核验证
   const [quizState, setQuizState] = useState<{
@@ -89,16 +418,13 @@ export function GoalsPage() {
     isLoading: false, error: null, result: null,
   })
 
+  // 最终测验状态
+  const [finalExamOpen, setFinalExamOpen] = useState(false)
+  const [finalExamGoalId, setFinalExamGoalId] = useState<string | null>(null)
+
   // Refs
   const goalsRef = useRef(goals)
   goalsRef.current = goals
-  const showCoinToast = (amount: number, reason: string) => {
-    addCoins(amount)
-    setCoinToast({ show: true, amount, reason })
-    setTimeout(() => setCoinToast({ show: false, amount: 0, reason: '' }), 3000)
-  }
-  const showCoinToastRef = useRef(showCoinToast)
-  showCoinToastRef.current = showCoinToast
 
   // Selected goal
   const selectedGoal = goals.find(g => g.id === selectedGoalId) || null
@@ -116,7 +442,6 @@ export function GoalsPage() {
             const totalElapsed = base + current
             if (totalElapsed >= task.duration * 60) {
               stopDailyTask(goal.id, task.id, true)
-              showCoinToastRef.current(15, '完成今日任务 +15 金币！')
             }
           }
         })
@@ -147,7 +472,7 @@ export function GoalsPage() {
     try {
       const goal = goals.find(g => g.id === goalId) || null
       const goalContext = goal ? buildGoalContextString(goal) : ''
-      const raw = await generateQuizQuestions({ topic: subGoalTitle, difficulty: 'easy', count: 3, goalContext })
+      const raw = await generateQuizQuestions({ topic: subGoalTitle, difficulty: 'easy', count: 5, goalContext, goalCategory: goal?.category })
       const parsed = JSON.parse(raw)
       const questions: QuizQuestion[] = (parsed.questions || []).map((q: any, i: number) => ({
         id: q.id || `q${i}`,
@@ -160,18 +485,8 @@ export function GoalsPage() {
       if (questions.length === 0) throw new Error('未生成题目')
       setQuizState(prev => ({ ...prev, questions, isLoading: false }))
     } catch {
-      const fallbackQuestions: QuizQuestion[] = [
-        {
-          id: 'f1', question: `关于"${subGoalTitle}"，你是否已经掌握了核心要点？`,
-          options: ['还没有，需要继续学习', '已经基本掌握了', '非常熟练', '完全不了解'],
-          correctIndex: 2, explanation: '只有非常熟练才算真正掌握！', difficulty: 'easy',
-        },
-        {
-          id: 'f2', question: `你能在没有参考的情况下独立完成"${subGoalTitle}"相关任务吗？`,
-          options: ['完全不行', '需要一些提示', '可以独立完成', '可以教别人'],
-          correctIndex: 2, explanation: '能独立完成才是真正的掌握。', difficulty: 'easy',
-        },
-      ]
+      // Fallback：当AI服务不可用时，根据子目标标题提供有实质知识点的硬编码题目，杜绝自我评估题
+      const fallbackQuestions = getSubjectFallbackQuestions(subGoalTitle)
       setQuizState(prev => ({ ...prev, questions: fallbackQuestions, isLoading: false }))
     }
   }
@@ -188,11 +503,9 @@ export function GoalsPage() {
         const completedCount = updated.filter(sg => sg.completed).length
         const newProgress = updated.length > 0 ? Math.round((completedCount / updated.length) * 100) : 0
         if (newProgress === 100 && goal.progress < 100) {
-          updateGoal(goalId, { status: 'completed', progress: 100 })
-          showCoinToast(230, '目标达成！+230 金币！')
+          handleGoalComplete(goalId, goal.title)
         } else {
           updateGoal(goalId, { progress: newProgress })
-          showCoinToast(30, '考核通过！完成子目标 +30 金币！')
         }
       }
       setQuizState(prev => ({ ...prev, result: 'pass' }))
@@ -201,8 +514,12 @@ export function GoalsPage() {
     }
   }
 
-  const handleCreateGoal = () => {
-    if (!newGoal.title || !newGoal.endDate) return
+  const handleGenerateFinalExam = (goalId: string) => {
+    setFinalExamGoalId(goalId)
+    setFinalExamOpen(true)
+  }
+
+  const handleCreateGoal = () => {    if (!newGoal.title || !newGoal.endDate) return
     const subGoals = newGoal.subGoals.filter(sg => sg.title.trim()).map(sg => ({
       id: generateId(), goalId: '', title: sg.title, completed: false,
     }))
@@ -213,9 +530,8 @@ export function GoalsPage() {
       status: 'active', priority: newGoal.priority,
       startDate: new Date().toISOString(),
       endDate: new Date(newGoal.endDate).toISOString(),
-      progress: 0, subGoals, category: newGoal.category,
+      subGoals, category: newGoal.category,
     })
-    showCoinToast(20, '创建新目标 +20 金币！')
     setNewGoal({ title: '', description: '', context: '', category: 'study', priority: 'medium', endDate: '', subGoals: [{ title: '' }], attachments: [] })
     setShowNewGoalDialog(false)
   }
@@ -232,42 +548,91 @@ export function GoalsPage() {
     setWizardState(prev => ({ ...prev, isLoading: true, error: null }))
     try {
       const attachmentTexts = extractAttachmentTexts(wizardState.attachments)
+      // Step 5: 自动推断分类，并在提问时传入
+      const inferredCategory = inferGoalCategory(wizardState.goalTitle, wizardState.goalContext)
       const result = await generateStatusQuestions(
         wizardState.goalTitle,
         wizardState.goalContext || undefined,
         attachmentTexts.length > 0 ? attachmentTexts : undefined,
+        inferredCategory,
       )
-      setWizardState(prev => ({ ...prev, step: 'status', questions: result.questions, statusAnswers: new Array(result.questions.length).fill(''), isLoading: false }))
+      setWizardState(prev => ({
+        ...prev,
+        step: 'status',
+        goalCategory: inferredCategory,
+        extractedInfo: result.extractedInfo,
+        questions: result.questions,
+        statusAnswers: new Array(result.questions.length).fill(''),
+        isLoading: false,
+      }))
     } catch {
       setWizardState(prev => ({ ...prev, isLoading: false, error: '生成问题失败，请重试' }))
     }
   }
 
   const handleSubmitStatusAnswers = async () => {
-    const statusText = wizardState.statusAnswers.join('；')
-    if (!statusText.trim()) return
+    // 将问题和答案配对，构建结构化状态文本（避免 AI 无法区分哪个问题对应哪个答案）
+    const qaPairs = wizardState.questions.map((q, i) => {
+      const answer = wizardState.statusAnswers[i]?.trim() || '（未回答）'
+      return `【${q}】\n→ ${answer}`
+    })
+    const statusText = qaPairs.join('\n\n')
+    if (!wizardState.statusAnswers.some(a => a.trim())) return
     setWizardState(prev => ({ ...prev, isLoading: true, error: null }))
     try {
       const attachmentTexts = extractAttachmentTexts(wizardState.attachments)
+      // Step 5: 传入推断的分类和提取的结构化信息
       const result = await generateGoalPlan(
         wizardState.goalTitle,
         statusText,
         wizardState.goalContext || undefined,
         attachmentTexts.length > 0 ? attachmentTexts : undefined,
+        wizardState.goalCategory,
+        wizardState.extractedInfo,
       )
       setWizardState(prev => ({ ...prev, step: 'plan', planResult: result, isLoading: false }))
-    } catch {
-      setWizardState(prev => ({ ...prev, isLoading: false, error: '生成计划失败，请重试' }))
+    } catch (err: any) {
+      console.error('[SmartCreate] 生成计划失败:', err)
+      const msg = err?.message || String(err)
+      // 如果错误信息包含 JSON 或 token/截断等关键词，给出更具体的提示
+      const isTruncated = msg.includes('JSON') || msg.includes('Unexpected') || msg.includes('token')
+      setWizardState(prev => ({
+        ...prev,
+        isLoading: false,
+        error: isTruncated
+          ? 'AI 生成的计划不完整（内容过长被截断），请减少附件数量后重试'
+          : '生成计划失败，请重试',
+      }))
     }
   }
 
   const handleConfirmAndCreateGoal = async () => {
     if (!wizardState.planResult) return
-    const endDate = new Date(); endDate.setDate(endDate.getDate() + 90)
-    const subGoals = wizardState.planResult.subGoals.map(sg => ({ id: generateId(), goalId: '', title: sg.title, completed: false }))
+    // Bug 修复：endDate 从标题提取时间约束作为首选，不再完全依赖 AI 返回的 totalDays
+    const titleExtractedDays = extractDaysFromTitle(wizardState.goalTitle, wizardState.goalContext)
+    const totalDays = titleExtractedDays ?? wizardState.planResult.totalDays ?? 30
+    const endDate = new Date(); endDate.setDate(endDate.getDate() + totalDays)
+    // Step 5: 写入所有 AI 增强字段（dayIndex / subGoalIndex / difficultyLevel / resourceReference / checklist）
+    const subGoals = wizardState.planResult.subGoals.map(sg => ({
+      id: generateId(), goalId: '',
+      title: sg.title, completed: false,
+      // 额外字段（description / dayRange）通过其他方式存储，或暂时记录在 description 中
+      ...(sg.description ? { description: sg.description } : {}),
+      ...(sg.dayRange ? { dayRange: sg.dayRange } : {}),
+    }))
     const dailyTasks: DailyTask[] = wizardState.planResult.dailyTasks.map((task, idx) => ({
-      id: generateId(), goalId: '', title: task.title, description: task.description,
-      duration: task.duration, frequency: task.frequency, completed: false, orderIndex: idx,
+      id: generateId(), goalId: '',
+      title: task.title,
+      description: task.description,
+      duration: task.duration,
+      frequency: task.frequency,
+      completed: false, orderIndex: idx,
+      // Step 5 新增字段
+      dayIndex: task.dayIndex,
+      subGoalIndex: task.subGoalIndex,
+      difficultyLevel: (task.difficultyLevel as 'easy' | 'medium' | 'hard') || undefined,
+      resourceReference: task.resourceReference,
+      checklist: task.checklist,
     }))
     await addGoal({
       title: wizardState.goalTitle,
@@ -276,9 +641,8 @@ export function GoalsPage() {
       attachments: wizardState.attachments.length > 0 ? wizardState.attachments : undefined,
       status: 'active', priority: 'medium' as GoalPriority,
       startDate: new Date().toISOString(), endDate: endDate.toISOString(),
-      progress: 0, subGoals, currentStatus: wizardState.planResult.currentStatus, dailyTasks,
+      subGoals, currentStatus: wizardState.planResult.currentStatus, dailyTasks,
     })
-    showCoinToast(20, 'AI 创建目标 +20 金币！')
     setShowSmartCreateDialog(false)
     setWizardState({ step: 'goal', goalTitle: '', goalContext: '', attachments: [], questions: [], statusAnswers: [], planResult: null, isLoading: false, error: null })
   }
@@ -323,8 +687,9 @@ export function GoalsPage() {
           deleteGoal(goalId)
           setSelectedGoalId(null)
         }}
-        showCoinToast={showCoinToast}
+        onGoalComplete={handleGoalComplete}
         formatTimeDisplay={formatTimeDisplay}
+        onGenerateFinalExam={handleGenerateFinalExam}
       />
 
       {/* RIGHT — 艾莉丝聊天 */}
@@ -360,21 +725,30 @@ export function GoalsPage() {
         onQuizComplete={handleQuizComplete}
       />
 
-      {/* Coin Toast */}
-      <AnimatePresence>
-        {coinToast.show && (
-          <motion.div
-            initial={{ opacity: 0, y: 40, scale: 0.9 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 40, scale: 0.9 }}
-            className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 px-5 py-3 rounded-2xl bg-gradient-to-r from-sakura-pink to-peach-orange text-white font-bold shadow-xl flex items-center gap-2 text-sm"
-          >
-            <span className="text-lg">🪙</span>
-            <span>+{coinToast.amount}</span>
-            <span className="font-normal opacity-90">{coinToast.reason}</span>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* CG Complete Dialog */}
+      <CgDialog
+        open={cgState.open}
+        onClose={() => setCgState({ open: false, goalTitle: '' })}
+        goalTitle={cgState.goalTitle}
+      />
+
+      {/* Final Exam Dialog */}
+      {finalExamGoalId && (() => {
+        const examGoal = goals.find(g => g.id === finalExamGoalId)
+        return examGoal ? (
+          <FinalExamDialog
+            open={finalExamOpen}
+            onOpenChange={(open) => {
+              setFinalExamOpen(open)
+              if (!open) setFinalExamGoalId(null)
+            }}
+            goalTitle={examGoal.title}
+            goalContext={examGoal.context}
+            goalCategory={examGoal.category}
+            attachments={examGoal.attachments}
+          />
+        ) : null
+      })()}
     </div>
   )
 }

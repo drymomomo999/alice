@@ -6,8 +6,9 @@ import { OnboardingPage } from '@/pages/Onboarding'
 import { HomePage } from '@/pages/Home'
 import { GoalsPage } from '@/pages/Goals'
 import { RoomPage } from '@/pages/Room'
+import { LectureRoomPage } from '@/pages/LectureRoom'
 import { ProfilePage } from '@/pages/Profile'
-import { useUserStore } from '@/store'
+import { useUserStore, useGoalsStore } from '@/store'
 import { useEffect } from 'react'
 import { onAuthStateChange, getCurrentUser } from '@/services/auth.service'
 
@@ -41,7 +42,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 }
 
 function App() {
-  const { isAuthenticated, isDemo, initializeUser, needsOnboarding, setAuthChecked } = useUserStore()
+  const { isAuthenticated, isDemo, initializeUser, setAuthChecked } = useUserStore()
 
   // 监听 Supabase Auth 状态，实现持久登录
   useEffect(() => {
@@ -55,9 +56,6 @@ function App() {
             id: session.user.id,
             email: session.user.email || '',
             nickname: session.user.user_metadata?.nickname || session.user.email || '',
-            coins: 0,
-            gems: 0,
-            streak: 0,
             createdAt: new Date().toISOString()
           }
         })
@@ -68,12 +66,16 @@ function App() {
             session.user.email || '',
             session.user.user_metadata?.nickname || session.user.email || '探索者'
           )
+          // 登录后立即从 DB 加载 goals，覆盖 localStorage 中的旧缓存
+          await useGoalsStore.getState().loadGoals(session.user.id)
         } catch (error) {
           console.error('User init failed:', error)
         }
       }
       if (event === 'SIGNED_OUT') {
-        // Supabase 已登出（其他标签页触发的），标记检查完成
+        // Supabase 已登出（其他标签页触发的），清空所有数据
+        useGoalsStore.getState().setGoals([])
+        useGoalsStore.setState({ currentGoal: null })
         setAuthChecked(true)
       }
     })
@@ -96,6 +98,8 @@ function App() {
               storeUser?.email || user.email || '',
               storeUser?.nickname || user.user_metadata?.nickname || '探索者'
             )
+            // 从 DB 重新加载 goals，覆盖可能残留的旧缓存
+            await useGoalsStore.getState().loadGoals(user.id)
           } catch (error) {
             console.error('Init user on refresh failed:', error)
           }
@@ -126,6 +130,7 @@ function App() {
               <Routes>
                 <Route path="/" element={<HomePage />} />
                 <Route path="/goals" element={<GoalsPage />} />
+                <Route path="/goals/lecture/:goalId" element={<LectureRoomPage />} />
                 <Route path="/room" element={<RoomPage />} />
                 <Route path="/profile" element={<ProfilePage />} />
               </Routes>

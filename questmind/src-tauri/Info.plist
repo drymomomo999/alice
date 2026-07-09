@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- 网络出站（Supabase + DeepSeek API）-->
+    <key>com.apple.security.network.client</key>
+    <true/>
+    <!-- 网络入站（如果需要本地服务器）-->
+    <key>com.apple.security.network.server</key>
+    <false/>
+    <!-- 文件下载/上传对话框-->
+    <key>com.apple.security.files.user-selected.read-write</key>
+    <true/>
+    <!-- App Sandbox（分发到 App Store 必开；直接分发可选）-->
+    <!-- 临时不开，保持开发/分发灵活 -->
+</dict>
+</plist>

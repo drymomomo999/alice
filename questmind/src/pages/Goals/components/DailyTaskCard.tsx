@@ -1,15 +1,16 @@
 /**
- * 每日任务卡片
+ * 任务卡片
  *
  * 包含计时器控制 + ✨ AI 学习指引按钮。
  * 点击 ✨ 按钮后在卡片下方展开 AI 详细学习指导。
  */
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import {
-  Play, Pause, Check, Sparkles, ChevronUp, Loader2,
+  Play, Pause, Check, Sparkles, Loader2,
 } from 'lucide-react'
 import { askTaskAssistant, buildGoalContextString } from '@/services/ai.service'
 import { useUserStore } from '@/store'
+import { MarkdownRenderer } from '@/components/MarkdownRenderer'
 import type { DailyTask, Goal } from '@/types'
 import { cn } from '@/lib/utils'
 
@@ -21,6 +22,7 @@ interface DailyTaskCardProps {
   onToggleStudyGuide: (taskId: string) => void
   onStartTask: (goalId: string, taskId: string) => void
   onStopTask: (goalId: string, taskId: string, markCompleted?: boolean) => void
+  onToggleComplete: (goalId: string, taskId: string) => void
   formatTimeDisplay: (seconds: number) => string
 }
 
@@ -32,6 +34,7 @@ export function DailyTaskCard({
   onToggleStudyGuide,
   onStartTask,
   onStopTask,
+  onToggleComplete,
   formatTimeDisplay,
 }: DailyTaskCardProps) {
   const { user } = useUserStore()
@@ -66,7 +69,6 @@ export function DailyTaskCard({
           goalContext: buildGoalContextString(goal) || undefined,
           goalCategory: goal.category,
           userName: user?.nickname || '来访者',
-          userLevel: Math.floor((user?.coins || 0) / 100) + 1,
         })
         if (!cancelled) {
           setGuideContent(result)
@@ -84,7 +86,7 @@ export function DailyTaskCard({
 
     fetchGuide()
     return () => { cancelled = true }
-  }, [isStudyGuideOpen, guideContent, task.title, task.description, goal.title, goal.category, user?.nickname, user?.coins])
+  }, [isStudyGuideOpen, guideContent, task.title, task.description, goal.title, goal.category, user?.nickname])
 
   return (
     <div>
@@ -96,21 +98,26 @@ export function DailyTaskCard({
         'bg-white border-sakura-light/20 hover:border-sakura-light/40'
       )}>
         {/* 完成复选框 */}
-        <div className={cn(
-          'w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 transition-all',
-          task.completed ? 'bg-green-400 border-green-400' : 'border-gray-300'
-        )}>
+        <button
+          onClick={() => onToggleComplete(goal.id, task.id)}
+          className={cn(
+            'w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 transition-all',
+            task.completed ? 'bg-green-400 border-green-400' : 'border-gray-300 hover:border-sakura-pink'
+          )}
+        >
           {task.completed && <Check className="w-3 h-3 text-white" />}
-        </div>
+        </button>
 
         {/* 任务信息 */}
         <div className="flex-1 min-w-0">
           <p className={cn('text-sm font-medium truncate', task.completed && 'line-through text-muted-foreground')}>
             {task.title}
           </p>
-          <p className="text-[10px] text-muted-foreground mt-0.5">
-            {task.duration ? `${task.duration}分钟` : ''} {task.frequency || ''}
-          </p>
+          {task.duration && (
+            <p className="text-[10px] text-muted-foreground mt-0.5">
+              {task.duration}分钟
+            </p>
+          )}
         </div>
 
         {/* 操作按钮区 */}
@@ -172,9 +179,7 @@ export function DailyTaskCard({
                 <Sparkles className="w-3 h-3 text-lavender" />
                 <span className="text-[11px] font-bold text-lavender">AI 学习指导</span>
               </div>
-              <p className="text-xs text-foreground/80 leading-relaxed whitespace-pre-wrap">
-                {guideContent}
-              </p>
+              <MarkdownRenderer content={guideContent} className="text-xs" />
             </div>
           ) : null}
         </div>

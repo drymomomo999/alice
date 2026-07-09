@@ -63,7 +63,7 @@ type OnboardingStep = 'nickname' | 'avatar' | 'time' | 'goals' | 'complete'
 
 export function OnboardingPage() {
   const navigate = useNavigate()
-  const { user, completeOnboarding, addCoins } = useUserStore()
+  const { user, completeOnboarding } = useUserStore()
   
   const [currentStep, setCurrentStep] = useState<OnboardingStep>('nickname')
   const [nickname, setNickname] = useState(user?.nickname || '')
@@ -108,9 +108,6 @@ export function OnboardingPage() {
         setIsSubmitting(false)
         return
       }
-
-      // 奖励用户完成 onboarding（本地即时生效，DB 异步同步）
-      addCoins(100)
 
       // 跳转到首页
       navigate('/')

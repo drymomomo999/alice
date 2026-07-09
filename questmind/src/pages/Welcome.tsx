@@ -1,7 +1,6 @@
-import { useState, useEffect } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
-import { Target, Bot, ArrowRight, LogIn, Sparkles, Star } from 'lucide-react'
-import { Button } from '@/components/ui/button'
+import { useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { ArrowRight, LogIn } from 'lucide-react'
 import { useUserStore } from '@/store'
 import LogoImg from '@/assets/logo.png'
 

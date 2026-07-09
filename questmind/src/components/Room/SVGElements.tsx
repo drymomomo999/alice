@@ -1,3 +1,5 @@
+import React from 'react'
+
 // SVG 图标组件 - 替代 emoji
 export const RoomBackground = ({ theme }: { theme: string }) => {
   const backgrounds = {
@@ -135,7 +137,6 @@ export const RoomBackground = ({ theme }: { theme: string }) => {
 // AI 伙伴 SVG 组件
 export const CompanionSVG = ({ state, size = 120 }: { state: string; size?: number }) => {
   const baseColor = '#FFB74D'
-  const darkerColor = '#FFA726'
   
   const companions = {
     idle: (
@@ -391,7 +392,7 @@ export const PlantSVG = ({ size = 40 }: { size?: number }) => (
 
 // 旅行目的地 SVG
 export const DestinationSVG = ({ destination, size = 60 }: { destination: string; size?: number }) => {
-  const destinations: Record<string, JSX.Element> = {
+  const destinations: Record<string, React.ReactElement> = {
     mountain: (
       <svg width={size} height={size} viewBox="0 0 60 60">
         <polygon points="30,10 50,50 10,50" fill="#78909C" />
@@ -501,7 +502,7 @@ export const DestinationSVG = ({ destination, size = 60 }: { destination: string
 
 // 纪念品 SVG
 export const SouvenirSVG = ({ souvenir, size = 40 }: { souvenir: string; size?: number }) => {
-  const souvenirs: Record<string, JSX.Element> = {
+  const souvenirs: Record<string, React.ReactElement> = {
     photo: (
       <svg width={size} height={size} viewBox="0 0 40 40">
         <rect x="2" y="2" width="36" height="36" fill="#FFF" rx="2" />

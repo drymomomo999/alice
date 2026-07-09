@@ -5,29 +5,31 @@ import {
   Target,
   User,
   LogOut,
-  Heart,
-  Settings,
   Sparkles,
   Menu,
   X,
+  Languages,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useUserStore } from '@/store'
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar'
 import LogoImg from '@/assets/logo.png'
-
-const navItems = [
-  { path: '/', icon: Home, label: '首页', emoji: '🏠' },
-  { path: '/goals', icon: Target, label: '目标', emoji: '🎯' },
-  { path: '/room', icon: Sparkles, label: '小屋', emoji: '✨' },
-  { path: '/profile', icon: User, label: '我的', emoji: '👤' },
-]
+import { useI18nStore, useT } from '@/i18n'
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const location = useLocation()
   const navigate = useNavigate()
   const { user, logout } = useUserStore()
   const [menuOpen, setMenuOpen] = useState(false)
+  const { locale, toggleLocale } = useI18nStore()
+  const t = useT()
+
+  const navItems = [
+    { path: '/', icon: Home, label: t('nav.home'), emoji: '🏠' },
+    { path: '/goals', icon: Target, label: t('nav.goals'), emoji: '🎯' },
+    { path: '/room', icon: Sparkles, label: t('nav.room'), emoji: '✨' },
+    { path: '/profile', icon: User, label: t('nav.profile'), emoji: '👤' },
+  ]
 
   const handleLogout = async () => {
     await logout()
@@ -106,25 +108,6 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                     </AvatarFallback>
                   </Avatar>
                   <p className="font-bold text-sm text-foreground">{user?.nickname || '小伙伴'}</p>
-                  <p className="text-[10px] text-muted-foreground mt-0.5">✨ Lv.{Math.floor((user?.coins || 0) / 100) + 1}</p>
-                </div>
-              </div>
-            </div>
-
-            {/* Resource display */}
-            <div className="p-3 border-b border-sakura-light/20">
-              <div className="grid grid-cols-2 gap-2">
-                <div className="p-2.5 rounded-xl bg-sakura-pale/60">
-                  <p className="text-sm font-bold text-peach leading-none">
-                    {user?.coins?.toLocaleString() || 0}
-                  </p>
-                  <p className="text-[10px] text-muted-foreground mt-1">🪙 金币</p>
-                </div>
-                <div className="p-2.5 rounded-xl bg-lavender-light/30">
-                  <p className="text-sm font-bold text-lavender leading-none">
-                    {user?.gems || 0}
-                  </p>
-                  <p className="text-[10px] text-muted-foreground mt-1">💎 钻石</p>
                 </div>
               </div>
             </div>
@@ -137,8 +120,24 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                 className="flex items-center gap-3 px-4 py-3 rounded-xl text-muted-foreground hover:bg-sakura-pale hover:text-foreground transition-all"
               >
                 <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-gray-50 text-base">⚙️</div>
-                <span className="text-sm font-medium">设置</span>
+                <span className="text-sm font-medium">{t('nav.settings')}</span>
               </Link>
+
+              {/* Language toggle */}
+              <button
+                onClick={toggleLocale}
+                className="flex items-center gap-3 px-4 py-3 rounded-xl text-muted-foreground hover:bg-sakura-pale hover:text-foreground transition-all w-full"
+              >
+                <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-gray-50">
+                  <Languages className="w-4 h-4 text-sakura" />
+                </div>
+                <div className="flex flex-col items-start">
+                  <span className="text-sm font-medium">{t('lang.switch')}</span>
+                  <span className="text-[10px] text-muted-foreground mt-0.5">
+                    {locale === 'zh' ? '当前：中文 → Switch to English' : 'Current: English → 切换为中文'}
+                  </span>
+                </div>
+              </button>
             </div>
 
             {/* Logout */}
@@ -148,7 +147,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                 className="flex items-center justify-center gap-2 w-full px-4 py-3 rounded-xl text-red-400 bg-red-50 hover:bg-red-100 transition-all font-medium text-sm"
               >
                 <LogOut className="w-4 h-4" />
-                退出登录
+                {t('nav.logout')}
               </button>
             </div>
           </nav>

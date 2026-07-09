@@ -3,7 +3,6 @@
  */
 import { Plus, Search } from 'lucide-react'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { useUserStore } from '@/store'
 import { calculateDaysLeft, cn } from '@/lib/utils'
 import type { Goal } from '@/types'
 import AliceCharacter from '@/assets/alice-character.png'
@@ -38,7 +37,6 @@ export function GoalListPanel({
   goals, selectedGoalId, searchQuery,
   onSearchChange, onSelectGoal, onNewGoal, onSmartCreate,
 }: GoalListPanelProps) {
-  const { user } = useUserStore()
 
   // 搜索过滤
   const filteredGoals = goals.filter(g => {
@@ -90,9 +88,6 @@ export function GoalListPanel({
           <span className="flex items-center gap-1 text-green-500 font-semibold">
             <span className="w-1.5 h-1.5 rounded-full bg-green-400" />
             {goals.filter(g => g.status === 'completed').length} 已完成
-          </span>
-          <span className="ml-auto flex items-center gap-1 text-peach font-semibold">
-            🪙 {user?.coins?.toLocaleString() || 0}
           </span>
         </div>
       </div>

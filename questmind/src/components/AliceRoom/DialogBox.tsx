@@ -1,4 +1,4 @@
-import { useRef, useEffect } from 'react'
+import { useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ChevronDown } from 'lucide-react'
 import { useTypewriter } from '@/hooks/useTypewriter'
@@ -16,7 +16,7 @@ interface DialogBoxProps {
 export function DialogBox({
   text,
   characterName = '艾莉丝',
-  expression,
+  expression: _expression,
   isTyping,
   onSkip,
   onTextComplete,

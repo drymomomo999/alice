@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
-import { motion, AnimatePresence } from 'framer-motion'
+import { useState } from 'react'
+import { Link } from 'react-router-dom'
+import { motion } from 'framer-motion'
 import { useUserStore, useGoalsStore } from '@/store'
 import { calculateDaysLeft } from '@/lib/utils'
 import { cn } from '@/lib/utils'
@@ -9,9 +9,6 @@ import AliceShy from '@/assets/alice/alice-shy.png'
 import AliceThinking from '@/assets/alice/alice-thinking.png'
 import AliceSleepy from '@/assets/alice/alice-sleepy.png'
 import AliceProud from '@/assets/alice/alice-proud.png'
-import { getAliceSystemPrompt } from '@/services/alice.service'
-import { sendAIMessage } from '@/services/ai.service'
-
 // 根据时段选择艾莉丝表情
 function getExpressionByTime(): string {
   const hour = new Date().getHours()
@@ -39,7 +36,7 @@ function getTimeGreeting(): string {
 function getAliceGreeting(nickname: string, activeGoals: number, completedGoals: number): string {
   const hour = new Date().getHours()
   if (activeGoals === 0) {
-    return `欢迎回来，${nickname}。领地目前还没有新的目标……需要我为您规划方向吗？🌹`
+    return `欢迎回来，${nickname}。目前还没有新的目标呢……需要我帮你规划方向吗？🌸`
   }
   if (hour < 9) {
     return `早安，${nickname}。今日的计划已经准备就绪，请随时开始。🌹`
@@ -56,7 +53,6 @@ function getAliceGreeting(nickname: string, activeGoals: number, completedGoals:
 export function HomePage() {
   const { user } = useUserStore()
   const { goals } = useGoalsStore()
-  const navigate = useNavigate()
 
   const activeGoals = goals.filter(g => g.status === 'active')
   const completedGoals = goals.filter(g => g.status === 'completed')
@@ -113,9 +109,6 @@ export function HomePage() {
             <span className="px-3 py-1 rounded-full bg-sakura-pale/70 text-sakura text-xs font-bold border border-sakura-light/40">
               🎯 {activeGoals.length} 进行中
             </span>
-            <span className="px-3 py-1 rounded-full bg-amber-50/80 text-peach text-xs font-bold border border-amber-200/50">
-              🪙 {user?.coins?.toLocaleString() || 0}
-            </span>
           </div>
         </motion.div>
 
@@ -132,7 +125,7 @@ export function HomePage() {
             <p className="text-sm text-foreground/90 leading-relaxed italic">
               「{aliceGreeting}」
             </p>
-            <p className="text-[10px] text-sakura/60 mt-2 font-medium">— 艾莉丝·冯·克伦威尔</p>
+            <p className="text-[10px] text-sakura/60 mt-2 font-medium">— 艾莉丝</p>
           </div>
         </motion.div>
 
@@ -236,6 +229,7 @@ export function HomePage() {
           </motion.div>
         )}
       </div>
+
     </div>
   )
 }

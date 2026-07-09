@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>QuestMind 内测招募海报</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;700;900&family=Noto+Sans+SC:wght@300;400;500;700&family=Cinzel:wght@400;700;900&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    background: #1a1a1a;
+    font-family: 'Noto Sans SC', sans-serif;
+  }
+
+  .poster {
+    width: 780px;
+    height: 1100px;
+    position: relative;
+    overflow: hidden;
+    background: #0a0a0f;
+    box-shadow: 0 0 60px rgba(0,0,0,0.8);
+  }
+
+  /* === 主背景：CG-02 玫瑰花园 === */
+  .poster-bg {
+    position: absolute;
+    inset: 0;
+    background-image: url('src/assets/alice/cg-02.jpg');
+    background-size: cover;
+    background-position: center 20%;
+    filter: brightness(0.35) saturate(0.8);
+    z-index: 0;
+  }
+
+  /* === 渐变遮罩层 === */
+  .poster-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    background:
+      linear-gradient(180deg,
+        rgba(10,10,15,0.6) 0%,
+        rgba(10,10,15,0.2) 25%,
+        rgba(10,10,15,0.15) 45%,
+        rgba(10,10,15,0.5) 65%,
+        rgba(10,10,15,0.92) 85%,
+        rgba(10,10,15,1) 100%
+      );
+  }
+
+  /* === 金色粒子装饰 === */
+  .particles {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    overflow: hidden;
+    pointer-events: none;
+  }
+  .particle {
+    position: absolute;
+    width: 3px;
+    height: 3px;
+    background: radial-gradient(circle, rgba(212,175,55,0.9), rgba(212,175,55,0));
+    border-radius: 50%;
+  }
+
+  /* === 顶部装饰线 === */
+  .top-ornament {
+    position: absolute;
+    top: 32px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+  .top-ornament .line {
+    width: 80px;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(212,175,55,0.6), transparent);
+  }
+  .top-ornament .diamond {
+    width: 8px;
+    height: 8px;
+    background: #d4af37;
+    transform: rotate(45deg);
+    box-shadow: 0 0 8px rgba(212,175,55,0.5);
+  }
+
+  /* === 内测标签 === */
+  .beta-badge {
+    position: absolute;
+    top: 52px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+    padding: 6px 28px;
+    border: 1px solid rgba(212,175,55,0.5);
+    border-radius: 2px;
+    background: rgba(10,10,15,0.6);
+    backdrop-filter: blur(4px);
+    color: #d4af37;
+    font-family: 'Cinzel', serif;
+    font-size: 12px;
+    letter-spacing: 6px;
+    text-transform: uppercase;
+  }
+
+  /* === 主标题 === */
+  .main-title {
+    position: absolute;
+    top: 100px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+    text-align: center;
+    width: 90%;
+  }
+  .main-title h1 {
+    font-family: 'Cinzel', serif;
+    font-size: 62px;
+    font-weight: 900;
+    color: transparent;
+    background: linear-gradient(180deg, #f5e6a3, #d4af37, #b8922d);
+    -webkit-background-clip: text;
+    background-clip: text;
+    letter-spacing: 8px;
+    line-height: 1.1;
+    text-shadow: 0 0 40px rgba(212,175,55,0.3);
+    filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5));
+  }
+  .main-title .subtitle {
+    margin-top: 12px;
+    font-size: 18px;
+    font-weight: 300;
+    color: rgba(255,255,255,0.75);
+    letter-spacing: 10px;
+    font-family: 'Noto Serif SC', serif;
+  }
+
+  /* === Logo 区 === */
+  .logo-area {
+    position: absolute;
+    top: 195px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .logo-area img {
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    border: 2px solid rgba(212,175,55,0.4);
+    box-shadow: 0 0 12px rgba(212,175,55,0.2);
+  }
+  .logo-area .tagline {
+    font-size: 13px;
+    color: rgba(212,175,55,0.7);
+    font-family: 'Noto Serif SC', serif;
+    letter-spacing: 3px;
+  }
+
+  /* === 艾莉丝 Chibi 装饰 === */
+  .alice-chibi {
+    position: absolute;
+    bottom: 310px;
+    right: 50px;
+    z-index: 5;
+    width: 140px;
+    height: auto;
+    filter: drop-shadow(0 4px 20px rgba(0,0,0,0.6));
+    animation: float 3s ease-in-out infinite;
+  }
+
+  @keyframes float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-8px); }
+  }
+
+  /* === 功能亮点区 === */
+  .features {
+    position: absolute;
+    bottom: 340px;
+    left: 50px;
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .feature-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 16px;
+    background: rgba(10,10,15,0.5);
+    backdrop-filter: blur(6px);
+    border-left: 2px solid rgba(212,175,55,0.6);
+    border-radius: 0 4px 4px 0;
+    transition: all 0.3s;
+  }
+  .feature-item:hover {
+    background: rgba(212,175,55,0.1);
+    border-left-color: #d4af37;
+    transform: translateX(4px);
+  }
+  .feature-icon {
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    flex-shrink: 0;
+  }
+  .feature-text {
+    display: flex;
+    flex-direction: column;
+  }
+  .feature-text .title {
+    font-size: 14px;
+    font-weight: 700;
+    color: #f5e6a3;
+    letter-spacing: 1px;
+  }
+  .feature-text .desc {
+    font-size: 11px;
+    color: rgba(255,255,255,0.5);
+    margin-top: 2px;
+  }
+
+  /* === 底部信息区 === */
+  .bottom-section {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 10;
+    padding: 28px 50px 36px;
+    background: linear-gradient(180deg, rgba(10,10,15,0) 0%, rgba(10,10,15,0.95) 30%, #0a0a0f 100%);
+  }
+
+  .divider {
+    width: 100%;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(212,175,55,0.4), transparent);
+    margin-bottom: 24px;
+  }
+
+  .cta-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+  }
+
+  .cta-left {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .cta-title {
+    font-family: 'Noto Serif SC', serif;
+    font-size: 22px;
+    font-weight: 700;
+    color: #d4af37;
+    letter-spacing: 4px;
+  }
+  .cta-desc {
+    font-size: 12px;
+    color: rgba(255,255,255,0.5);
+    line-height: 1.8;
+    max-width: 320px;
+  }
+
+  .qr-placeholder {
+    width: 100px;
+    height: 100px;
+    border: 1px solid rgba(212,175,55,0.3);
+    border-radius: 4px;
+    background: rgba(255,255,255,0.05);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+  }
+  .qr-placeholder .qr-icon {
+    font-size: 32px;
+    opacity: 0.3;
+  }
+  .qr-placeholder .qr-text {
+    font-size: 9px;
+    color: rgba(255,255,255,0.3);
+    letter-spacing: 1px;
+  }
+
+  /* === 底部品牌 === */
+  .footer-brand {
+    margin-top: 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .footer-brand .brand-text {
+    font-size: 10px;
+    color: rgba(255,255,255,0.25);
+    letter-spacing: 2px;
+    font-family: 'Cinzel', serif;
+  }
+  .footer-brand .tech-stack {
+    font-size: 9px;
+    color: rgba(255,255,255,0.15);
+    letter-spacing: 1px;
+  }
+
+  /* === 角落装饰 === */
+  .corner {
+    position: absolute;
+    z-index: 10;
+    width: 40px;
+    height: 40px;
+  }
+  .corner-tl { top: 20px; left: 20px; border-top: 1px solid rgba(212,175,55,0.3); border-left: 1px solid rgba(212,175,55,0.3); }
+  .corner-tr { top: 20px; right: 20px; border-top: 1px solid rgba(212,175,55,0.3); border-right: 1px solid rgba(212,175,55,0.3); }
+  .corner-bl { bottom: 20px; left: 20px; border-bottom: 1px solid rgba(212,175,55,0.3); border-left: 1px solid rgba(212,175,55,0.3); }
+  .corner-br { bottom: 20px; right: 20px; border-bottom: 1px solid rgba(212,175,55,0.3); border-right: 1px solid rgba(212,175,55,0.3); }
+
+  /* === 中心光晕 === */
+  .glow {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -60%);
+    width: 400px;
+    height: 400px;
+    background: radial-gradient(ellipse, rgba(212,175,55,0.08) 0%, transparent 70%);
+    z-index: 2;
+    pointer-events: none;
+  }
+
+  /* === 打印优化 === */
+  @media print {
+    body { background: #0a0a0f; }
+    .poster { box-shadow: none; }
+  }
+
+  /* === 高亮数字 === */
+  .highlight-number {
+    font-family: 'Cinzel', serif;
+    font-size: 28px;
+    font-weight: 900;
+    color: #d4af37;
+    text-shadow: 0 0 20px rgba(212,175,55,0.3);
+  }
+  .highlight-label {
+    font-size: 10px;
+    color: rgba(255,255,255,0.4);
+    letter-spacing: 2px;
+  }
+
+  /* === 数据展示行 === */
+  .stats-row {
+    position: absolute;
+    bottom: 260px;
+    right: 50px;
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    align-items: flex-end;
+  }
+  .stat-item {
+    text-align: right;
+  }
+</style>
+</head>
+<body>
+
+<div class="poster">
+  <!-- 背景 -->
+  <div class="poster-bg"></div>
+  <div class="poster-overlay"></div>
+  <div class="glow"></div>
+
+  <!-- 金色粒子 -->
+  <div class="particles">
+    <div class="particle" style="top:8%; left:15%; width:4px; height:4px;"></div>
+    <div class="particle" style="top:12%; left:72%; width:2px; height:2px;"></div>
+    <div class="particle" style="top:22%; left:88%; width:3px; height:3px;"></div>
+    <div class="particle" style="top:35%; left:10%; width:2px; height:2px;"></div>
+    <div class="particle" style="top:42%; left:45%; width:3px; height:3px;"></div>
+    <div class="particle" style="top:55%; left:78%; width:2px; height:2px;"></div>
+    <div class="particle" style="top:60%; left:22%; width:4px; height:4px;"></div>
+    <div class="particle" style="top:68%; left:65%; width:2px; height:2px;"></div>
+    <div class="particle" style="top:75%; left:35%; width:3px; height:3px;"></div>
+    <div class="particle" style="top:82%; left:90%; width:2px; height:2px;"></div>
+    <div class="particle" style="top:18%; left:55%; width:2px; height:2px;"></div>
+    <div class="particle" style="top:48%; left:30%; width:3px; height:3px;"></div>
+  </div>
+
+  <!-- 角落装饰 -->
+  <div class="corner corner-tl"></div>
+  <div class="corner corner-tr"></div>
+  <div class="corner corner-bl"></div>
+  <div class="corner corner-br"></div>
+
+  <!-- 顶部装饰 -->
+  <div class="top-ornament">
+    <div class="line"></div>
+    <div class="diamond"></div>
+    <div class="line"></div>
+  </div>
+
+  <!-- 内测标签 -->
+  <div class="beta-badge">CLOSED BETA</div>
+
+  <!-- 主标题 -->
+  <div class="main-title">
+    <h1>QuestMind</h1>
+    <div class="subtitle">AI 陪伴式学习平台</div>
+  </div>
+
+  <!-- Logo -->
+  <div class="logo-area">
+    <img src="src/assets/logo.png" alt="QuestMind Logo" onerror="this.style.display='none'">
+    <span class="tagline">与艾莉丝共赴知识之约</span>
+  </div>
+
+  <!-- 艾莉丝 Chibi 浮动装饰 -->
+  <img class="alice-chibi" src="src/assets/alice/alice-happy.png" alt="Alice" onerror="this.style.display='none'">
+
+  <!-- 功能亮点 -->
+  <div class="features">
+    <div class="feature-item">
+      <div class="feature-icon">📚</div>
+      <div class="feature-text">
+        <div class="title">AI 讲解房间</div>
+        <div class="desc">上传教材，艾莉丝为你逐章讲解</div>
+      </div>
+    </div>
+    <div class="feature-item">
+      <div class="feature-icon">🎯</div>
+      <div class="feature-text">
+        <div class="title">目标拆解追踪</div>
+        <div class="desc">智能规划学习路径，进度一目了然</div>
+      </div>
+    </div>
+    <div class="feature-item">
+      <div class="feature-icon">🏠</div>
+      <div class="feature-text">
+        <div class="title">温馨小屋陪伴</div>
+        <div class="desc">装饰你的专属空间，与艾莉丝日常互动</div>
+      </div>
+    </div>
+    <div class="feature-item">
+      <div class="feature-icon">⚡</div>
+      <div class="feature-text">
+        <div class="title">专注计时挑战</div>
+        <div class="desc">番茄钟 + 游戏化激励，告别拖延</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 数据亮点 -->
+  <div class="stats-row">
+    <div class="stat-item">
+      <div class="highlight-number">7</div>
+      <div class="highlight-label">AI 核心函数</div>
+    </div>
+    <div class="stat-item">
+      <div class="highlight-number">8</div>
+      <div class="highlight-label">表情互动系统</div>
+    </div>
+    <div class="stat-item">
+      <div class="highlight-number">∞</div>
+      <div class="highlight-label">学习可能性</div>
+    </div>
+  </div>
+
+  <!-- 底部 -->
+  <div class="bottom-section">
+    <div class="divider"></div>
+    <div class="cta-row">
+      <div class="cta-left">
+        <div class="cta-title">内测招募中</div>
+        <div class="cta-desc">
+          成为第一批探索者，与艾莉丝一起开启学习新篇章<br>
+          限量席位 · 专属成就 · 内测纪念
+        </div>
+      </div>
+      <div class="qr-placeholder">
+        <div class="qr-icon">⬜</div>
+        <div class="qr-text">扫码加入</div>
+      </div>
+    </div>
+    <div class="footer-brand">
+      <span class="brand-text">QUESTMIND © 2026</span>
+      <span class="tech-stack">React · Supabase · DeepSeek · Tauri</span>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

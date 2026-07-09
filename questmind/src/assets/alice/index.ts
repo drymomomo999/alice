@@ -6,7 +6,7 @@
  *
  * 表情列表（8种）：
  * - alice-happy.png    → 开心/微笑
- * - alice-shy.png      → 害羞/傲娇
+ * - alice-shy.png      → 害羞/温柔
  * - alice-angry.png    → 生气/严肃
  * - alice-surprised.png→ 惊讶
  * - alice-sleepy.png   → 困倦/打盹
@@ -20,7 +20,7 @@
 // 表情类型（null 表示无特殊表情，使用默认头像）
 export type AliceExpression =
   | 'happy'     // 开心/微笑
-  | 'shy'       // 害羞/傲娇
+  | 'shy'       // 害羞/温柔
   | 'angry'     // 生气/严肃
   | 'surprised' // 惊讶
   | 'sleepy'    // 困倦/打盹
@@ -48,7 +48,7 @@ export const ALICE_EXPRESSIONS: Record<AliceExpression, ExpressionInfo> = {
     id: 'shy',
     label: '害羞',
     emoji: '😳',
-    keywords: ['收下了', '并不值得', '应尽的职责', '过奖', '谢谢', '没想到', '才不是', '唔'],
+    keywords: ['收下了', '过奖', '谢谢', '没想到', '嗯……', '能帮到你就好'],
   },
   angry: {
     id: 'angry',
@@ -78,7 +78,7 @@ export const ALICE_EXPRESSIONS: Record<AliceExpression, ExpressionInfo> = {
     id: 'proud',
     label: '得意',
     emoji: '😏',
-    keywords: ['当然', '自然', '毫无疑问', '如我所料', '果然', '领地', '克伦威尔'],
+    keywords: ['当然', '自然', '毫无疑问', '如我所料', '果然', '做得很好', '很棒'],
   },
   sad: {
     id: 'sad',

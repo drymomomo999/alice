@@ -6,8 +6,6 @@ import {
   Camera,
   Mail,
   Calendar,
-  Coins,
-  Gem,
   ChevronLeft,
   Check,
   X,
@@ -16,12 +14,11 @@ import {
   LogOut,
   TrendingUp,
   Upload,
-  ImagePlus
+  ImagePlus,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar'
-import { Badge } from '@/components/ui/badge'
 import { useUserStore } from '@/store'
 import { cn } from '@/lib/utils'
 import * as db from '@/services/supabase'
@@ -123,7 +120,7 @@ export function ProfilePage() {
         if (user?.id) {
           // 如果之前也是图片，删除旧文件
           if (isAvatarImage) {
-            await db.deleteUserAvatar(user.avatar)
+            if (user.avatar) await db.deleteUserAvatar(user.avatar)
           }
           const url = await db.uploadUserAvatar(user.id, uploadFile)
           if (!url) {
@@ -139,7 +136,7 @@ export function ProfilePage() {
         newAvatar = selectedAvatar.emoji
         if (user?.id && isAvatarImage) {
           // 从图片切回 emoji，删除旧图片文件
-          await db.deleteUserAvatar(user.avatar)
+          if (user.avatar) await db.deleteUserAvatar(user.avatar)
         }
       }
 
@@ -309,21 +306,7 @@ export function ProfilePage() {
           </div>
 
           {/* Stats Grid */}
-          <div className="grid grid-cols-3 gap-4 md:gap-6">
-            <div className="text-center p-3 rounded-xl bg-amber-50 dark:bg-amber-950/30">
-              <Coins className="w-6 h-6 mx-auto mb-1 text-amber-500" />
-              <p className="text-lg font-bold text-amber-600 dark:text-amber-400">
-                {user?.coins?.toLocaleString() || 0}
-              </p>
-              <p className="text-xs text-amber-600/70">金币</p>
-            </div>
-            <div className="text-center p-3 rounded-xl bg-purple-50 dark:bg-purple-950/30">
-              <Gem className="w-6 h-6 mx-auto mb-1 text-purple-500" />
-              <p className="text-lg font-bold text-purple-600 dark:text-purple-400">
-                {user?.gems || 0}
-              </p>
-              <p className="text-xs text-purple-600/70">钻石</p>
-            </div>
+          <div className="grid grid-cols-1 gap-4 md:gap-6 max-w-xs">
             <div className="text-center p-3 rounded-xl bg-orange-50 dark:bg-orange-950/30">
               <Calendar className="w-6 h-6 mx-auto mb-1 text-orange-500" />
               <p className="text-lg font-bold text-orange-600 dark:text-orange-400">
@@ -389,6 +372,7 @@ export function ProfilePage() {
                      user?.timePreference === 'night' ? '夜猫子' : '灵活安排'}
                   </span>
                 </div>
+
               </div>
             </div>
           </motion.div>
@@ -451,30 +435,6 @@ export function ProfilePage() {
               </div>
             </div>
 
-            {/* Resources */}
-            <div className="bg-white dark:bg-slate-800/50 rounded-xl p-4">
-              <h3 className="font-semibold mb-4">资源一览</h3>
-              <div className="space-y-4">
-                <div className="flex items-center justify-between p-3 rounded-lg bg-amber-50 dark:bg-amber-950/20">
-                  <div className="flex items-center gap-3">
-                    <Coins className="w-6 h-6 text-amber-500" />
-                    <span className="font-medium">金币余额</span>
-                  </div>
-                  <span className="text-xl font-bold text-amber-600">
-                    {user?.coins?.toLocaleString() || 0}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between p-3 rounded-lg bg-purple-50 dark:bg-purple-950/20">
-                  <div className="flex items-center gap-3">
-                    <Gem className="w-6 h-6 text-purple-500" />
-                    <span className="font-medium">钻石余额</span>
-                  </div>
-                  <span className="text-xl font-bold text-purple-600">
-                    {user?.gems || 0}
-                  </span>
-                </div>
-              </div>
-            </div>
           </motion.div>
         )}
       </AnimatePresence>

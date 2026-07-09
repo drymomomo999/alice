@@ -4,8 +4,7 @@ import type {
   Goal,
   SubGoal,
   DailyTask,
-  AIMessage,
-  GoalAttachment
+  AIMessage
 } from '@/types'
 
 // 环境变量
@@ -108,12 +107,10 @@ export async function updateUserProfile(
   
   if (updates.nickname !== undefined) dbUpdates.nickname = updates.nickname
   if (updates.avatar !== undefined) dbUpdates.avatar = updates.avatar
-  if (updates.coins !== undefined) dbUpdates.coins = updates.coins
-  if (updates.gems !== undefined) dbUpdates.gems = updates.gems
-  if (updates.streak !== undefined) dbUpdates.streak = updates.streak
   if (updates.timePreference !== undefined) dbUpdates.time_preference = updates.timePreference
   if (updates.goalPreferences !== undefined) dbUpdates.goal_preferences = updates.goalPreferences
   if (updates.onboardingCompleted !== undefined) dbUpdates.onboarding_completed = updates.onboardingCompleted
+  if (updates.city !== undefined) dbUpdates.city = updates.city
   
   const { data, error } = await client
     .from('users')
@@ -163,93 +160,6 @@ export async function completeUserOnboarding(
   return transformUserFromDb(updatedUser)
 }
 
-export async function updateUserCoins(
-  userId: string,
-  amount: number,
-  reason: string
-): Promise<{ success: boolean; newBalance: number }> {
-  const client = getSupabase()
-  
-  // 先获取当前余额
-  const { data: currentUser, error: fetchError } = await client
-    .from('users')
-    .select('coins')
-    .eq('id', userId)
-    .single()
-  
-  if (fetchError || !currentUser) {
-    return { success: false, newBalance: 0 }
-  }
-  
-  const newBalance = currentUser.coins + amount
-  
-  // 更新余额
-  const { error: updateError } = await client
-    .from('users')
-    .update({ coins: newBalance })
-    .eq('id', userId)
-  
-  if (updateError) {
-    return { success: false, newBalance: currentUser.coins }
-  }
-  
-  // 记录交易
-  await client.from('coin_transactions').insert({
-    user_id: userId,
-    type: amount > 0 ? 'earn' : 'spend',
-    amount: Math.abs(amount),
-    reason,
-    balance_after: newBalance
-  })
-  
-  return { success: true, newBalance }
-}
-
-export async function updateUserStreak(userId: string): Promise<number> {
-  const client = getSupabase()
-  
-  const { data: currentUser, error: fetchError } = await client
-    .from('users')
-    .select('streak, streak_updated_at')
-    .eq('id', userId)
-    .single()
-  
-  if (fetchError || !currentUser) {
-    return 0
-  }
-  
-  const today = new Date().toISOString().split('T')[0]
-  const lastUpdate = currentUser.streak_updated_at?.split('T')[0]
-  
-  let newStreak = currentUser.streak
-  
-  if (lastUpdate === today) {
-    // 今天已经更新过
-    return currentUser.streak
-  }
-  
-  const yesterday = new Date()
-  yesterday.setDate(yesterday.getDate() - 1)
-  const yesterdayStr = yesterday.toISOString().split('T')[0]
-  
-  if (lastUpdate === yesterdayStr) {
-    // 昨天有记录，连续打卡
-    newStreak = currentUser.streak + 1
-  } else {
-    // 断签了，重新开始
-    newStreak = 1
-  }
-  
-  await client
-    .from('users')
-    .update({
-      streak: newStreak,
-      streak_updated_at: new Date().toISOString()
-    })
-    .eq('id', userId)
-  
-  return newStreak
-}
 
 // =====================================================
 // 目标相关操作
@@ -280,13 +190,18 @@ export async function getGoals(userId: string): Promise<Goal[]> {
   return goalsWithSubGoals
 }
 
-export async function getGoalById(goalId: string): Promise<Goal | null> {
+export async function getGoalById(goalId: string, userId?: string): Promise<Goal | null> {
   const client = getSupabase()
-  const { data, error } = await client
+  let query = client
     .from('goals')
     .select('*')
     .eq('id', goalId)
-    .single()
+
+  if (userId) {
+    query = query.eq('user_id', userId)
+  }
+
+  const { data, error } = await query.single()
   
   if (error || !data) {
     return null
@@ -329,7 +244,8 @@ export async function createGoal(
 
 export async function updateGoal(
   goalId: string,
-  updates: Partial<Goal>
+  updates: Partial<Goal>,
+  userId?: string
 ): Promise<Goal | null> {
   const client = getSupabase()
   const dbUpdates: Record<string, any> = {}
@@ -345,11 +261,16 @@ export async function updateGoal(
   if (updates.context !== undefined) dbUpdates.context = updates.context
   if (updates.attachments !== undefined) dbUpdates.attachments = updates.attachments
   
-  const { data, error } = await client
+  let query = client
     .from('goals')
     .update(dbUpdates)
     .eq('id', goalId)
-    .select()
+
+  if (userId) {
+    query = query.eq('user_id', userId)
+  }
+
+  const { data, error } = await query.select()
   
   if (error || !data || data.length === 0) {
     console.error('Error updating goal:', error ?? 'No rows returned')
@@ -361,12 +282,18 @@ export async function updateGoal(
   return transformGoalFromDb(data[0], subGoals, dailyTasks)
 }
 
-export async function deleteGoal(goalId: string): Promise<boolean> {
+export async function deleteGoal(goalId: string, userId?: string): Promise<boolean> {
   const client = getSupabase()
-  const { error } = await client
+  let query = client
     .from('goals')
     .delete()
     .eq('id', goalId)
+
+  if (userId) {
+    query = query.eq('user_id', userId)
+  }
+
+  const { error } = await query
   
   if (error) {
     console.error('Error deleting goal:', error)
@@ -898,15 +825,13 @@ function transformUserFromDb(data: any): User {
     email: data.email || undefined,
     nickname: data.nickname,
     avatar: data.avatar,
-    coins: data.coins,
-    gems: data.gems,
-    streak: data.streak,
     createdAt: data.created_at,
     timePreference: data.time_preference,
     goalPreferences: data.goal_preferences,
     onboardingCompleted: data.onboarding_completed,
     totalGoalsCompleted: data.total_goals_completed ?? 0,
     totalFocusMinutes: data.total_focus_minutes ?? 0,
+    city: data.city || undefined,
   }
 }
 

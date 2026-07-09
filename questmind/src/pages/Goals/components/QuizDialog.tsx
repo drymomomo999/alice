@@ -1,12 +1,12 @@
 /**
  * 考核验证对话框
  */
-import { useState } from 'react'
-import { Sparkles, Loader2, CheckCircle2, ArrowRight, Check } from 'lucide-react'
+import { Sparkles, Loader2, ArrowRight, Check } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 import type { QuizQuestion } from '@/types'
+import { useT } from '@/i18n'
 
 interface QuizDialogProps {
   quizState: {
@@ -38,6 +38,7 @@ interface QuizDialogProps {
 }
 
 export function QuizDialog({ quizState, setQuizState, onStartQuiz, onQuizComplete }: QuizDialogProps) {
+  const t = useT()
   return (
     <Dialog open={quizState.open} onOpenChange={(open) => {
       if (!open) setQuizState(prev => ({ ...prev, open: false, result: null }))
@@ -46,39 +47,39 @@ export function QuizDialog({ quizState, setQuizState, onStartQuiz, onQuizComplet
         <DialogHeader className="shrink-0">
           <DialogTitle className="flex items-center gap-2">
             <Sparkles className="w-5 h-5 text-peach" />
-            子目标考核验证
+            {t('quiz.title')}
           </DialogTitle>
           <DialogDescription>
-            通过考核后才能完成子目标「{quizState.subGoalTitle}」
+            {t('quiz.description')}「{quizState.subGoalTitle}」
           </DialogDescription>
         </DialogHeader>
 
         {quizState.isLoading ? (
           <div className="flex-1 flex flex-col items-center justify-center py-12 gap-3">
             <Loader2 className="w-8 h-8 text-sakura animate-spin" />
-            <p className="text-sm text-muted-foreground">艾莉丝正在出题中...</p>
+            <p className="text-sm text-muted-foreground">{t('quiz.generating')}</p>
           </div>
         ) : quizState.result === 'pass' ? (
           <div className="flex-1 flex flex-col items-center justify-center py-12 gap-3">
             <div className="text-5xl">🎉</div>
-            <p className="text-lg font-bold text-green-500">考核通过！</p>
-            <p className="text-sm text-muted-foreground">子目标已标记为完成</p>
+            <p className="text-lg font-bold text-green-500">{t('quiz.passed')}</p>
+            <p className="text-sm text-muted-foreground">{t('quiz.passed_sub')}</p>
           </div>
         ) : quizState.result === 'fail' ? (
           <div className="flex-1 flex flex-col items-center justify-center py-12 gap-3">
             <div className="text-5xl">😔</div>
-            <p className="text-lg font-bold text-amber-500">考核未通过</p>
-            <p className="text-sm text-muted-foreground">继续努力，掌握后再来挑战吧！</p>
+            <p className="text-lg font-bold text-amber-500">{t('quiz.failed')}</p>
+            <p className="text-sm text-muted-foreground">{t('quiz.failed_sub')}</p>
             <Button onClick={() => onStartQuiz(quizState.goalId, quizState.subGoalId, quizState.subGoalTitle)}
               className="rounded-xl bg-gradient-to-r from-sakura-pink to-peach-orange text-white border-0 mt-2">
-              重新考核
+              {t('quiz.retry')}
             </Button>
           </div>
         ) : quizState.questions.length > 0 ? (
           <div className="flex-1 min-h-0 overflow-y-auto py-4 space-y-4">
             {/* 进度指示 */}
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <span>第 {quizState.currentIdx + 1} / {quizState.questions.length} 题</span>
+              <span>{t('quiz.question_progress', { current: quizState.currentIdx + 1, total: quizState.questions.length })}</span>
               <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
                 <div className="h-full bg-gradient-to-r from-sakura-pink to-peach-orange rounded-full transition-all"
                   style={{ width: `${((quizState.currentIdx + (quizState.answers[quizState.currentIdx] !== undefined ? 1 : 0)) / quizState.questions.length) * 100}%` }} />
@@ -122,7 +123,7 @@ export function QuizDialog({ quizState, setQuizState, onStartQuiz, onQuizComplet
                       'p-3 rounded-xl text-xs',
                       isCorrect ? 'bg-green-50 text-green-700' : 'bg-amber-50 text-amber-700'
                     )}>
-                      <p className="font-medium mb-0.5">{isCorrect ? '✅ 正确！' : '❌ 不正确'}</p>
+                      <p className="font-medium mb-0.5">{isCorrect ? t('quiz.correct') : t('quiz.incorrect')}</p>
                       <p>{q.explanation}</p>
                     </div>
                   )}
@@ -136,17 +137,17 @@ export function QuizDialog({ quizState, setQuizState, onStartQuiz, onQuizComplet
         {!quizState.isLoading && quizState.result === null && quizState.questions.length > 0 && (
           <DialogFooter className="flex-row gap-2 shrink-0">
             <Button variant="outline" onClick={() => setQuizState(prev => ({ ...prev, open: false }))}
-              className="rounded-xl">取消</Button>
+              className="rounded-xl">{t('common.cancel')}</Button>
             {quizState.answers[quizState.currentIdx] !== undefined && (
               quizState.currentIdx < quizState.questions.length - 1 ? (
                 <Button onClick={() => setQuizState(prev => ({ ...prev, currentIdx: prev.currentIdx + 1 }))}
                   className="rounded-xl bg-gradient-to-r from-sakura-pink to-peach-orange text-white border-0">
-                  下一题 <ArrowRight className="w-4 h-4 ml-1" />
+                  {t('quiz.next_question')} <ArrowRight className="w-4 h-4 ml-1" />
                 </Button>
               ) : (
                 <Button onClick={onQuizComplete}
                   className="rounded-xl bg-gradient-to-r from-sakura-pink to-peach-orange text-white border-0">
-                  <Check className="w-4 h-4 mr-1" /> 提交考核
+                  <Check className="w-4 h-4 mr-1" /> {t('quiz.submit')}
                 </Button>
               )
             )}
@@ -156,14 +157,14 @@ export function QuizDialog({ quizState, setQuizState, onStartQuiz, onQuizComplet
           <DialogFooter className="shrink-0">
             <Button onClick={() => setQuizState(prev => ({ ...prev, open: false, result: null }))}
               className="rounded-xl bg-gradient-to-r from-sakura-pink to-peach-orange text-white border-0 w-full">
-              太棒了！🎉
+              {t('quiz.great')}
             </Button>
           </DialogFooter>
         )}
         {quizState.result === 'fail' && (
           <DialogFooter className="shrink-0">
             <Button variant="outline" onClick={() => setQuizState(prev => ({ ...prev, open: false, result: null }))}
-              className="rounded-xl w-full">关闭</Button>
+              className="rounded-xl w-full">{t('common.close')}</Button>
           </DialogFooter>
         )}
       </DialogContent>

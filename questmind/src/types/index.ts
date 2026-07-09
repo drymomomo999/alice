@@ -7,9 +7,6 @@ export interface User {
   email?: string
   nickname: string
   avatar?: string
-  coins: number
-  gems: number
-  streak: number
   createdAt: string
   // 统计字段
   totalGoalsCompleted?: number
@@ -18,6 +15,8 @@ export interface User {
   timePreference?: TimePreference
   goalPreferences?: GoalCategory[]
   onboardingCompleted?: boolean
+  // 位置信息
+  city?: string   // 城市名称（用于天气问候）
 }
 
 // 认证相关类型
@@ -39,8 +38,8 @@ export interface GoalAttachment {
   type: 'document' | 'image'
   mimeType: string
   size: number                       // bytes
-  storagePath: string                // Supabase Storage 路径
-  url: string                        // 公开访问 URL
+  storagePath?: string               // Supabase Storage 路径（未登录时为空）
+  url?: string                       // 公开访问 URL（未登录时为空）
   extractedText?: string             // 文档提取的文字（截断至3000字，图片为空）
   imageDescription?: string          // 用户输入的图片描述（文档为空）
   uploadedAt: string
@@ -53,6 +52,7 @@ export interface Goal {
   description: string
   status: GoalStatus
   priority: GoalPriority
+  category?: GoalCategory             // 目标分类（study/fitness/reading/exam/career/language/skill/other）
   startDate: string
   endDate: string
   progress: number
@@ -72,19 +72,28 @@ export interface SubGoal {
   title: string
   completed: boolean
   completedAt?: string
+  // AI 增强字段（Step 1 新增）
+  description?: string      // 子目标详细描述
+  dayRange?: string         // 对应天数范围（如"Day 1-3"）
 }
 
 // 每日任务类型
 export interface DailyTask {
   id: string
   goalId: string
-  title: string           // 任务标题
+  title: string           // 任务标题（动作+对象+量化格式）
   description?: string    // 任务描述
   duration?: number       // 预计时长（分钟）
   frequency?: 'daily' | 'custom'  // 频率
   completed: boolean
   completedAt?: string
   orderIndex: number
+  // AI 增强字段（Step 1 新增）
+  dayIndex?: number          // 第几天执行（用于多日计划中的日程定位）
+  subGoalIndex?: number      // 关联的子目标索引
+  difficultyLevel?: 'easy' | 'medium' | 'hard'  // 任务难度
+  resourceReference?: string  // 引用的参考资料位置（如"教材第3章P45-P62"）
+  checklist?: string[]       // 执行步骤清单
   // 倒计时相关字段
   startedAt?: string      // 任务开始时间（ISO 字符串）
   elapsedSeconds?: number // 当前运行周期已用时间（秒），每次 resume 重置

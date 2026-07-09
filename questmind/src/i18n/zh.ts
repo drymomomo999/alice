@@ -1,0 +1,143 @@
+/**
+ * 中文翻译
+ */
+export const zh = {
+  // === 通用 ===
+  common: {
+    cancel: '取消',
+    confirm: '确认',
+    save: '保存',
+    close: '关闭',
+    loading: '加载中...',
+    error: '出错了',
+    retry: '重试',
+    next: '下一步',
+    prev: '上一步',
+    submit: '提交',
+    create: '创建',
+    delete: '删除',
+    edit: '编辑',
+    back: '返回',
+    continue: '继续',
+    done: '完成',
+    yes: '是',
+    no: '否',
+    search: '搜索',
+    language: '语言',
+  },
+
+  // === 导航 ===
+  nav: {
+    home: '首页',
+    goals: '目标',
+    room: '小屋',
+    profile: '我的',
+    settings: '设置',
+    logout: '退出登录',
+  },
+
+  // === 首页 ===
+  home: {
+    greeting_morning: '早上好',
+    greeting_afternoon: '下午好',
+    greeting_evening: '晚上好',
+    streak: '连续学习',
+    days: '天',
+    coins: '金币',
+    gems: '钻石',
+  },
+
+  // === 目标页 ===
+  goals: {
+    title: '学习目标',
+    empty: '还没有目标，快来创建一个吧！',
+    add_goal: '新建目标',
+    smart_create: 'AI 智能创建',
+    search_placeholder: '搜索目标...',
+    all: '全部',
+    active: '进行中',
+    completed: '已完成',
+    paused: '已暂停',
+    abandoned: '已放弃',
+    select_goal: '选择一个目标开始',
+    progress: '进度',
+    sub_goals: '子目标',
+    daily_tasks: '每日任务',
+    no_sub_goals: '暂无子目标',
+    no_tasks: '暂无每日任务',
+    start_quiz: '考核验证',
+    complete: '标记完成',
+    delete_goal: '删除目标',
+    generate_final_exam: '生成最终测验',
+    final_exam_tip: '综合所有附件，生成完整习题集',
+    ai_study_guide: 'AI 学习指南',
+    ai_chat: '与艾莉丝聊天',
+    chapter_outline: '知识大纲',
+    flashcards: '速记卡',
+    lecture: '讲解模式',
+  },
+
+  // === Quiz / 子目标考核 ===
+  quiz: {
+    title: '子目标考核验证',
+    description: '通过考核后才能完成子目标',
+    generating: '艾莉丝正在出题中...',
+    question_progress: '第 {current} / {total} 题',
+    passed: '考核通过！',
+    passed_sub: '子目标已标记为完成',
+    failed: '考核未通过',
+    failed_sub: '继续努力，掌握后再来挑战吧！',
+    retry: '重新考核',
+    next_question: '下一题',
+    submit: '提交考核',
+    great: '太棒了！🎉',
+    correct: '✅ 正确！',
+    incorrect: '❌ 不正确',
+  },
+
+  // === 最终测验 ===
+  finalExam: {
+    title: '最终综合测验',
+    subtitle: '基于你上传的所有资料，生成一套完整习题',
+    config_title: '配置题型与数量',
+    config_hint: '你可以调整以下题型及每种题型的数量',
+    multiple_choice: '单选题',
+    true_false: '判断题',
+    fill_blank: '填空题',
+    short_answer: '简答题',
+    total_questions: '共 {count} 道题',
+    generating: '正在生成测验，请稍候...',
+    generate_btn: '生成测验',
+    regenerate_btn: '重新生成',
+    submit_exam: '提交测验',
+    result_title: '测验结果',
+    score: '得分',
+    correct_count: '答对 {count} 题',
+    excellent: '优秀！',
+    good: '良好',
+    pass: '及格',
+    fail: '需要加强',
+    no_attachments: '暂无附件资料',
+    no_attachments_hint: '请先在目标中上传学习资料，才能生成最终测验',
+    answer_placeholder: '请输入你的答案...',
+    check_answer: '查看答案',
+    your_answer: '你的答案',
+    correct_answer: '参考答案',
+    question_num: '第 {num} 题',
+    section_mc: '一、单选题',
+    section_tf: '二、判断题',
+    section_fb: '三、填空题',
+    section_sa: '四、简答题',
+    true: '正确',
+    false: '错误',
+  },
+
+  // === 语言切换 ===
+  lang: {
+    chinese: '中文',
+    english: 'English',
+    switch: '切换语言',
+  },
+}
+
+export type TranslationKeys = typeof zh

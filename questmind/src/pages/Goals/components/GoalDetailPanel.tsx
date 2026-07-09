@@ -1,13 +1,15 @@
 /**
  * 中栏：目标详情面板
  *
- * 包含目标头部信息、补充信息（上下文+附件）、子目标列表、AI 学习指南、每日任务列表。
+ * 包含目标头部信息、补充信息（上下文+附件）、子目标列表、AI 学习指南、任务列表。
  */
 import { useState, useRef } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   Plus, Target, Check, Trash2, CheckCircle2,
   Pause, Play, Calendar, Flag, ClipboardList, HelpCircle,
   FileText, Upload, X, Image as ImageIcon, File, Loader2,
+  BookOpen, ChevronDown, ChevronRight, Sparkles, GraduationCap,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
@@ -15,10 +17,12 @@ import { useGoalsStore, useUserStore } from '@/store'
 import { formatDate, generateId, cn } from '@/lib/utils'
 import { uploadGoalAttachment, deleteGoalAttachment, formatFileSize, isAcceptableFileType, getAttachmentType } from '@/services/supabase'
 import { extractTextFromFile } from '@/lib/fileExtractor'
+import { generateChapterOutline, type ChapterOutline } from '@/services/ai.service'
 import { StudyGuideCard } from './StudyGuideCard'
 import { DailyTaskCard } from './DailyTaskCard'
+import { MarkdownRenderer } from '@/components/MarkdownRenderer'
 import { categoryConfig, priorityConfig } from './GoalListPanel'
-import type { Goal, GoalAttachment, QuizQuestion } from '@/types'
+import type { Goal, GoalAttachment } from '@/types'
 
 // 状态标签
 const statusLabel: Record<string, { label: string; color: string }> = {
@@ -68,17 +72,21 @@ interface GoalDetailPanelProps {
   onShowNewGoal: () => void
   onShowSmartCreate: () => void
   onDeleteGoal: (goalId: string) => void
-  showCoinToast: (amount: number, reason: string) => void
+  onGoalComplete: (goalId: string, goalTitle: string) => void
   formatTimeDisplay: (seconds: number) => string
+  onGenerateFinalExam: (goalId: string) => void
 }
 
 export function GoalDetailPanel({
   selectedGoal, goalsVersion, onStartQuiz,
-  onShowNewGoal, onShowSmartCreate, onDeleteGoal, showCoinToast,
+  onShowNewGoal, onShowSmartCreate, onDeleteGoal,
+  onGoalComplete,
   formatTimeDisplay,
+  onGenerateFinalExam,
 }: GoalDetailPanelProps) {
-  const { updateGoal, toggleSubGoal, startDailyTask, stopDailyTask } = useGoalsStore()
-  const { user } = useUserStore()
+  const { updateGoal, startDailyTask, stopDailyTask, toggleDailyTask } = useGoalsStore()
+  const { user: _user } = useUserStore()
+  const navigate = useNavigate()
   const [activeStudyTaskId, setActiveStudyTaskId] = useState<string | null>(null)
 
   // 上下文编辑状态
@@ -92,6 +100,13 @@ export function GoalDetailPanel({
   // 图片描述编辑状态
   const [editingImageDescId, setEditingImageDescId] = useState<string | null>(null)
   const [imageDescDraft, setImageDescDraft] = useState('')
+
+  // 章节大纲状态
+  const [outline, setOutline] = useState<ChapterOutline | null>(null)
+  const [isGeneratingOutline, setIsGeneratingOutline] = useState(false)
+  const [outlineError, setOutlineError] = useState<string | null>(null)
+  const [outlineExpanded, setOutlineExpanded] = useState(true)
+  const [expandedChapters, setExpandedChapters] = useState<Set<number>>(new Set())
 
   // 切换学习指引展开/收起
   const handleToggleStudyGuide = (taskId: string) => {
@@ -174,7 +189,7 @@ export function GoalDetailPanel({
   const handleRemoveAttachment = async (att: GoalAttachment) => {
     if (!selectedGoal) return
     // 从 Storage 删除
-    await deleteGoalAttachment(att.storagePath)
+    await deleteGoalAttachment(att.storagePath || '')
     // 从列表中移除
     const newAttachments = (selectedGoal.attachments || []).filter(a => a.id !== att.id)
     updateGoal(selectedGoal.id, { attachments: newAttachments })
@@ -189,6 +204,62 @@ export function GoalDetailPanel({
     updateGoal(selectedGoal.id, { attachments: newAttachments })
     setEditingImageDescId(null)
     setImageDescDraft('')
+  }
+
+  // 生成章节大纲
+  const handleGenerateOutline = async () => {
+    if (!selectedGoal || isGeneratingOutline) return
+
+    // 收集所有有提取文字的文档附件
+    const docTexts = selectedGoal.attachments
+      ?.filter(a => a.type === 'document' && a.extractedText)
+      .map(a => ({ name: a.name, text: a.extractedText! }))
+
+    if (!docTexts || docTexts.length === 0) {
+      // 兜底：没有附件就用 description + context（单文档兜底）
+      const fallback = [selectedGoal.description, selectedGoal.context].filter(Boolean).join('\n')
+      if (!fallback) {
+        setOutlineError('请先上传文档附件，或在补充信息中描述课程内容，艾莉丝才能提炼大纲。')
+        return
+      }
+      // 兜底：包装为单文档
+      setIsGeneratingOutline(true)
+      setOutlineError(null)
+      try {
+        const result = await generateChapterOutline(selectedGoal.title, [
+          { name: selectedGoal.title, text: fallback }
+        ])
+        setOutline(result)
+        setOutlineExpanded(true)
+      } catch {
+        setOutlineError('大纲生成失败，请稍后重试。')
+      } finally {
+        setIsGeneratingOutline(false)
+      }
+      return
+    }
+
+    setIsGeneratingOutline(true)
+    setOutlineError(null)
+    try {
+      const result = await generateChapterOutline(selectedGoal.title, docTexts)
+      setOutline(result)
+      setOutlineExpanded(true)
+    } catch {
+      setOutlineError('大纲生成失败，请稍后重试。')
+    } finally {
+      setIsGeneratingOutline(false)
+    }
+  }
+
+  // 切换章节展开
+  const toggleChapter = (idx: number) => {
+    setExpandedChapters(prev => {
+      const next = new Set(prev)
+      if (next.has(idx)) next.delete(idx)
+      else next.add(idx)
+      return next
+    })
   }
 
   // 格式化时间（共享给 DailyTaskCard）
@@ -265,8 +336,7 @@ export function GoalDetailPanel({
           {selectedGoal.status !== 'completed' && (
             <Button size="sm" variant="outline" className="text-xs h-7 gap-1 border-green-200/60 text-green-500 hover:bg-green-50 rounded-lg"
               onClick={() => {
-                updateGoal(selectedGoal.id, { status: 'completed', progress: 100 })
-                showCoinToast(200, '目标达成！+200 金币！')
+                onGoalComplete(selectedGoal.id, selectedGoal.title)
               }}>
               <CheckCircle2 className="w-3 h-3" />完成目标
             </Button>
@@ -335,9 +405,26 @@ export function GoalDetailPanel({
             {selectedGoal.attachments && selectedGoal.attachments.length > 0 && (
               <div className="space-y-1.5">
                 {selectedGoal.attachments.map(att => (
-                  <div key={att.id} className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white border border-sakura-light/20 group">
+                  <div
+                    key={att.id}
+                    onClick={() => {
+                      if (att.type === 'document' && att.extractedText) {
+                        navigate(`/goals/lecture/${selectedGoal.id}`)
+                      }
+                    }}
+                    className={`flex items-center gap-2 px-3 py-2 rounded-xl bg-white border border-sakura-light/20 group ${
+                      att.type === 'document' && att.extractedText
+                        ? 'cursor-pointer hover:bg-sakura-pale/20 hover:border-sakura/30'
+                        : ''
+                    } transition-colors`}
+                  >
                     <AttachmentIcon type={att.type} />
                     <span className="text-xs text-foreground flex-1 truncate">{att.name}</span>
+                    {att.type === 'document' && att.extractedText && (
+                      <span className="text-[9px] text-lavender shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                        点击讲解
+                      </span>
+                    )}
                     <span className="text-[10px] text-muted-foreground/60 shrink-0">{formatFileSize(att.size)}</span>
                     {/* 图片描述编辑 */}
                     {att.type === 'image' && !att.imageDescription && editingImageDescId !== att.id && (
@@ -457,22 +544,146 @@ export function GoalDetailPanel({
             </div>
           </div>
 
+          {/* 生成最终测验按钮 */}
+          <button
+            onClick={() => onGenerateFinalExam(selectedGoal.id)}
+            className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-dashed border-peach/40 text-peach hover:bg-peach/5 hover:border-peach/70 transition-all text-sm font-medium group"
+          >
+            <GraduationCap className="w-4 h-4 group-hover:scale-110 transition-transform" />
+            生成最终测验
+            <span className="text-[10px] font-normal text-muted-foreground ml-1">综合所有材料</span>
+          </button>
+
+          {/* ===== 章节大纲区块 ===== */}
+          <div className="rounded-xl border border-lavender-light/30 bg-lavender-light/5 overflow-hidden">
+            {/* 标题栏 */}
+            <div className="flex items-center justify-between px-3.5 py-2.5">
+              <button
+                onClick={() => setOutlineExpanded(v => !v)}
+                className="flex items-center gap-1.5 flex-1 text-left"
+              >
+                <BookOpen className="w-3.5 h-3.5 text-lavender" />
+                <span className="text-xs font-bold text-foreground">知识大纲</span>
+                {outline && (
+                  <span className="text-[10px] text-muted-foreground font-normal ml-1">
+                    {outline.totalChapters} 个章节
+                  </span>
+                )}
+                {outlineExpanded
+                  ? <ChevronDown className="w-3.5 h-3.5 text-muted-foreground ml-auto" />
+                  : <ChevronRight className="w-3.5 h-3.5 text-muted-foreground ml-auto" />
+                }
+              </button>
+              {!outline && !isGeneratingOutline && (
+                <button
+                  onClick={handleGenerateOutline}
+                  className="shrink-0 ml-2 flex items-center gap-1 text-[10px] text-lavender hover:text-lavender-dark font-medium transition-colors"
+                >
+                  <Sparkles className="w-3 h-3" />生成大纲
+                </button>
+              )}
+              {outline && !isGeneratingOutline && (
+                <button
+                  onClick={handleGenerateOutline}
+                  className="shrink-0 ml-2 text-[10px] text-muted-foreground hover:text-sakura transition-colors"
+                >
+                  重新生成
+                </button>
+              )}
+            </div>
+
+            {outlineExpanded && (
+              <div className="px-3.5 pb-3 pt-0 space-y-1.5">
+                {/* 加载中 */}
+                {isGeneratingOutline && (
+                  <div className="flex items-center gap-2 py-2">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-lavender" />
+                    <span className="text-[11px] text-muted-foreground">艾莉丝正在解析文档结构...</span>
+                  </div>
+                )}
+
+                {/* 错误 */}
+                {outlineError && (
+                  <p className="text-[11px] text-red-400 bg-red-50 rounded-lg px-3 py-2">{outlineError}</p>
+                )}
+
+                {/* 无大纲提示 */}
+                {!outline && !isGeneratingOutline && !outlineError && (
+                  <p className="text-[11px] text-muted-foreground/60 italic pb-1">
+                    点击「生成大纲」，艾莉丝会自动从附件或目标内容中提炼章节结构。
+                  </p>
+                )}
+
+                {/* 大纲内容 */}
+                {outline && !isGeneratingOutline && (
+                  <div className="space-y-1">
+                    {outline.suggestedOrder && (
+                      <p className="text-[10px] text-lavender bg-lavender-light/15 rounded-lg px-2.5 py-1.5 mb-2">
+                        💡 {outline.suggestedOrder}
+                      </p>
+                    )}
+                    {outline.chapters.map((ch, idx) => (
+                      <div key={idx} className="rounded-lg border border-lavender-light/20 overflow-hidden">
+                        <button
+                          onClick={() => toggleChapter(idx)}
+                          className="w-full flex items-center gap-2 px-3 py-2 hover:bg-lavender-light/10 text-left transition-colors"
+                        >
+                          <span className="text-[10px] font-bold text-lavender w-5 shrink-0">{idx + 1}</span>
+                          <span className="text-xs text-foreground flex-1 font-medium">{ch.title}</span>
+                          {expandedChapters.has(idx)
+                            ? <ChevronDown className="w-3 h-3 text-muted-foreground shrink-0" />
+                            : <ChevronRight className="w-3 h-3 text-muted-foreground shrink-0" />
+                          }
+                        </button>
+                        {expandedChapters.has(idx) && (
+                          <div className="px-3 pb-2.5 pt-0 space-y-1.5">
+                            <MarkdownRenderer content={ch.summary} className="text-[11px]" />
+                            {ch.keyTerms.length > 0 && (
+                              <div className="flex flex-wrap gap-1">
+                                {ch.keyTerms.map((term, ti) => (
+                                  <span key={ti} className="text-[9px] px-1.5 py-0.5 rounded-full bg-lavender-light/20 text-lavender font-medium">
+                                    {term}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
           {/* AI 学习指南概览卡片 */}
           {selectedGoal.dailyTasks && selectedGoal.dailyTasks.length > 0 && (
             <StudyGuideCard
               goalTitle={selectedGoal.title}
               goalContext={selectedGoal.context || selectedGoal.description || undefined}
+              goalCategory={selectedGoal.category}
+              documentTexts={
+                selectedGoal.attachments
+                  ?.filter(a => a.type === 'document' && a.extractedText)
+                  .map(a => ({ name: a.name, text: a.extractedText! }))
+              }
               dailyTasks={selectedGoal.dailyTasks}
             />
           )}
 
-          {/* Daily Tasks */}
+          {/* 全部任务 */}
           {selectedGoal.dailyTasks && selectedGoal.dailyTasks.length > 0 && (
             <div>
-              <h3 className="text-sm font-bold text-foreground flex items-center gap-2 mb-3">
-                <ClipboardList className="w-4 h-4 text-peach" />
-                每日任务
-              </h3>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
+                  <ClipboardList className="w-4 h-4 text-peach" />
+                  全部任务
+                  <span className="text-[10px] text-muted-foreground font-normal">
+                    ({selectedGoal.dailyTasks!.filter(t => t.completed).length}/{selectedGoal.dailyTasks!.length})
+                  </span>
+                </h3>
+              </div>
               <div className="space-y-2">
                 {selectedGoal.dailyTasks.map(task => (
                   <DailyTaskCard
@@ -484,6 +695,7 @@ export function GoalDetailPanel({
                     onToggleStudyGuide={handleToggleStudyGuide}
                     onStartTask={startDailyTask}
                     onStopTask={stopDailyTask}
+                    onToggleComplete={toggleDailyTask}
                     formatTimeDisplay={_formatTime}
                   />
                 ))}
