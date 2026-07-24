@@ -93,13 +93,13 @@ export function AlicePet({
   }, [handleSend])
 
   // 渲染头像
-  const avatarSrc = expression ? exprImages[expression] : '/alice-character.png'
+  const avatarSrc = expression ? exprImages[expression] : './alice-character.png'
 
   return (
-    <div className="fixed bottom-4 right-4 z-40 flex flex-col items-end gap-2">
+    <div className="fixed bottom-4 right-4 z-40 flex flex-col items-end gap-2 max-sm:bottom-2 max-sm:right-2">
       {/* === 展开状态：气泡 + 菜单 + 输入框 === */}
       {expanded && (
-        <div className="w-80 flex flex-col gap-2 animate-in slide-in-from-bottom-2 duration-200">
+        <div className="w-80 max-sm:w-[calc(100vw-1rem)] flex flex-col gap-2 animate-in slide-in-from-bottom-2 duration-200">
           {/* 消息列表 */}
           <div className="max-h-48 overflow-y-auto rounded-xl bg-white/90 backdrop-blur-md border border-sakura/20 p-3 space-y-2 shadow-lg">
             {messages.length === 0 && !isTyping && (

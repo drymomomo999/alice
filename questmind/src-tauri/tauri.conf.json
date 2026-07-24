@@ -23,7 +23,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://njecytkavzhrmlgzwwkm.supabase.co https://*.supabase.co; font-src 'self' data:; frame-src 'self' blob:; connect-src 'self' https://*.supabase.co https://api.deepseek.com wss://*.supabase.co; worker-src 'self' blob:"
+      "csp": "default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://njecytkavzhrmlgzwwkm.supabase.co https://*.supabase.co; font-src 'self' data:; frame-src 'self' blob:; media-src 'self' blob:; connect-src 'self' https://*.supabase.co https://api.deepseek.com wss://*.supabase.co; worker-src 'self' blob:"
     },
     "macOSPrivateApi": false
   },

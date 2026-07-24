@@ -10,12 +10,21 @@ yarn-error.log
 .env
 .env.local
 .env.production
+.env.android
 
 # Build output
 dist
 dist-ssr
 src-tauri/target/
 *.local
+*.apk
+
+# Android / Capacitor build artifacts
+android/build/
+android/app/build/
+android/.gradle/
+android/capacitor-cordova-android-plugins/build/
+android/local.properties
 
 # Dev output logs
 dev-output.txt
@@ -36,6 +45,13 @@ supabase/.phases
 # Build cache
 .tsbuildinfo
 *.tsbuildinfo
+
+# Python
+__pycache__/
+*.pyc
+
+# Temp files
+.codex_py/
 
 # Editor directories and files
 .vscode/*

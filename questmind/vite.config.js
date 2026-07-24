@@ -7,6 +7,8 @@ const isTauri = !!process.env.TAURI_ENV_TARGET_TRIPLE;
 
 // https://vite.dev/config/
 export default defineConfig({
+    // Capacitor 的 file:// / capacitor:// 协议要求相对路径
+    base: './',
     plugins: [react()],
     resolve: {
         alias: {

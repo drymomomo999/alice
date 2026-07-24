@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
+import { HashRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { AppLayout } from '@/components/layout/AppLayout'
 import { WelcomePage } from '@/pages/Welcome'
 import { LoginPage } from '@/pages/Login/LoginPage'
@@ -115,7 +115,7 @@ function App() {
   }, []) // 只在挂载时执行一次
 
   return (
-    <BrowserRouter>
+    <HashRouter>
       <Routes>
         <Route path="/welcome" element={<WelcomePage />} />
         <Route path="/login" element={<LoginPage />} />
@@ -138,7 +138,7 @@ function App() {
           </ProtectedRoute>
         } />
       </Routes>
-    </BrowserRouter>
+    </HashRouter>
   )
 }
 

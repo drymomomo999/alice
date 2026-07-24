@@ -10,6 +10,7 @@ import {
   type LectureMode,
 } from '@/services/ai.service'
 import { AlicePet, type PetMessage } from './AlicePet'
+import { PdfPageRenderer } from './PdfPageRenderer'
 
 /** 讲解模式菜单配置 */
 const LECTURE_MODES: { key: string; label: string; icon: string }[] = [
@@ -311,14 +312,13 @@ export function LectureRoomPage() {
         )}
       </header>
 
-      {/* ===== PDF 阅读区（全屏） ===== */}
+      {/* ===== PDF 阅读区 ===== */}
       <main className="flex-1 overflow-hidden min-h-0">
         {activeDoc?.url ? (
-          /* 通过 Blob URL 加载 PDF，绕过 CSP 和 X-Frame-Options */
           pdfLoading ? (
             <div className="flex flex-col items-center justify-center h-full gap-3">
               <Loader2 className="w-8 h-8 text-sakura animate-spin" />
-              <p className="text-sm text-gray-400">正在加载文档...</p>
+              <p className="text-sm text-gray-400">正在下载文档...</p>
             </div>
           ) : pdfError ? (
             <div className="flex flex-col items-center justify-center h-full gap-4">
@@ -328,21 +328,13 @@ export function LectureRoomPage() {
               <div className="text-center max-w-xs px-6">
                 <p className="text-sm text-gray-700 font-medium mb-1">文档加载失败</p>
                 <p className="text-xs text-gray-400 leading-relaxed">{pdfError}</p>
-                <p className="text-xs text-gray-400 mt-1">请检查网络连接后刷新页面重试</p>
               </div>
             </div>
-          ) : pdfBlobUrl ? (
-            <iframe
-              key={activeDoc.id}
-              src={`${pdfBlobUrl}#toolbar=1&navpanes=1&view=FitH`}
-              title={activeDoc.name}
-              className="w-full h-full border-0"
-            />
           ) : (
-            <div className="flex flex-col items-center justify-center h-full gap-3">
-              <Loader2 className="w-8 h-8 text-gray-300 animate-spin" />
-              <p className="text-sm text-gray-400">准备文档中...</p>
-            </div>
+            <PdfPageRenderer
+              pdfUrl={pdfBlobUrl}
+              fileName={activeDoc.name}
+            />
           )
         ) : activeDoc && !activeDoc.url ? (
           /* 有附件但没有公开 URL（未登录本地场景） */

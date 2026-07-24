@@ -374,6 +374,18 @@ async function callViaEdgeFunction(messages: ChatCompletionMessage[], maxTokens 
  * 直连 DeepSeek API（开发模式备用）
  */
 async function callDirectDeepSeek(messages: ChatCompletionMessage[], maxTokens = 8192): Promise<string | null> {
+  // 生产环境：API Key 不应打包进 bundle，统一走 Edge Function
+  if (!import.meta.env.DEV) {
+    console.log('[AI] 生产环境，跳过直连 DeepSeek（安全策略），统一走 Edge Function')
+    return null
+  }
+
+  // Capacitor/Android 环境：WebView 无 Vite proxy，直连 DeepSeek 有 CORS 问题 → 跳过
+  if (import.meta.env.VITE_IS_CAPACITOR === 'true') {
+    console.log('[AI] Capacitor 环境，跳过直连 DeepSeek（CORS 限制），走 Edge Function')
+    return null
+  }
+
   const apiKey = import.meta.env.VITE_DEEPSEEK_API_KEY
   if (!apiKey || apiKey === 'your_deepseek_api_key_here') {
     console.warn('[AI] 直连 DeepSeek: VITE_DEEPSEEK_API_KEY 未配置或仍为默认值')
@@ -442,11 +454,11 @@ export async function sendAIMessage(options: SendMessageOptions): Promise<string
     }
   }
 
-  // 依次尝试：直连 DeepSeek（优先，走 Vite 代理绕过 CORS）→ Edge Function
+  // 依次尝试：Edge Function（优先，Key 安全 + 无 CORS）→ 直连 DeepSeek
   const maxTokens = 8192
   const result =
-    (await callDirectDeepSeek(messages, maxTokens)) ||
-    (await callViaEdgeFunction(messages, maxTokens))
+    (await callViaEdgeFunction(messages, maxTokens)) ||
+    (await callDirectDeepSeek(messages, maxTokens))
 
   if (!result) {
     throw new Error('AI 服务不可用：直连 DeepSeek 和 Edge Function 均失败。请检查 API Key 配置和网络连接。')
@@ -463,8 +475,8 @@ export async function callDeepSeekAPI(
   messages: ChatCompletionMessage[],
   maxTokens = 8192
 ): Promise<string | null> {
-  return (await callDirectDeepSeek(messages, maxTokens)) ||
-         (await callViaEdgeFunction(messages, maxTokens))
+  return (await callViaEdgeFunction(messages, maxTokens)) ||
+         (await callDirectDeepSeek(messages, maxTokens))
 }
 
 /**
@@ -1221,8 +1233,8 @@ ${sections.join('\n')}
 
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
-      let result = await callDirectDeepSeek(messages, 8192)
-      if (!result) result = await callViaEdgeFunction(messages, 8192)
+      let result = await callViaEdgeFunction(messages, 8192)
+      if (!result) result = await callDirectDeepSeek(messages, 8192)
       if (!result) throw new Error(isEn ? 'AI service unavailable.' : 'AI 服务不可用。')
 
       const parsed = safeJSONParse(stripMarkdownCodeBlock(result)) as {
@@ -1782,8 +1794,8 @@ ${hasDocs ? `【引用要求 — 非常重要】
   ]
 
   const result =
-    (await callDirectDeepSeek(messages, 8192)) ||
-    (await callViaEdgeFunction(messages, 8192))
+    (await callViaEdgeFunction(messages, 8192)) ||
+    (await callDirectDeepSeek(messages, 8192))
 
   if (!result) {
     throw new Error('AI 服务不可用：无法生成讲解内容。')
@@ -1853,8 +1865,8 @@ ${docSections}
   ]
 
   const result =
-    (await callDirectDeepSeek(messages, 8192)) ||
-    (await callViaEdgeFunction(messages, 8192))
+    (await callViaEdgeFunction(messages, 8192)) ||
+    (await callDirectDeepSeek(messages, 8192))
 
   if (!result) {
     throw new Error('AI 服务不可用：无法生成章节大纲。')
@@ -1913,8 +1925,8 @@ ${contentSection}
   ]
 
   const result =
-    (await callDirectDeepSeek(messages, 8192)) ||
-    (await callViaEdgeFunction(messages, 8192))
+    (await callViaEdgeFunction(messages, 8192)) ||
+    (await callDirectDeepSeek(messages, 8192))
 
   if (!result) {
     throw new Error('AI 服务不可用：无法生成速记卡。')

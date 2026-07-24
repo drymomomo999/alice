@@ -5,8 +5,9 @@
  */
 import { useState, useRef, useEffect } from 'react'
 import { useGoalsStore } from '@/store'
-import { generateId } from '@/lib/utils'
+import { generateId, cn } from '@/lib/utils'
 import { generateStatusQuestions, generateGoalPlan, generateQuizQuestions, buildGoalContextString, type GoalPlanResult } from '@/services/ai.service'
+import { useIsMobile } from '@/hooks/useIsMobile'
 import type { GoalPriority, GoalCategory, DailyTask, GoalAttachment, QuizQuestion } from '@/types'
 
 // 拆分后的子组件
@@ -391,6 +392,10 @@ export function GoalsPage() {
     planResult: null, isLoading: false, error: null,
   })
 
+  // 移动端适配
+  const isMobile = useIsMobile()
+  const [mobileTab, setMobileTab] = useState<'list' | 'detail' | 'alice'>('list')
+
   // CG 展示状态
   const [cgState, setCgState] = useState<{ open: boolean; goalTitle: string }>({ open: false, goalTitle: '' })
 
@@ -654,48 +659,136 @@ export function GoalsPage() {
     return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`
   }
 
+  const mobileTabClass = (tab: string) =>
+    cn(
+      'flex-1 py-3 text-center text-sm font-medium transition-colors border-b-2',
+      mobileTab === tab
+        ? 'border-sakura text-sakura'
+        : 'border-transparent text-muted-foreground hover:text-foreground'
+    )
+
   // ============================================================
   // RENDER
   // ============================================================
   return (
-    <div className="h-[calc(100vh-7.5rem)] flex gap-4 animate-in goals-dashboard">
-      {/* LEFT — 目标列表 */}
-      <GoalListPanel
-        goals={goals}
-        selectedGoalId={selectedGoalId}
-        searchQuery={searchQuery}
-        onSearchChange={setSearchQuery}
-        onSelectGoal={setSelectedGoalId}
-        onNewGoal={() => setShowNewGoalDialog(true)}
-        onSmartCreate={() => {
-          setShowSmartCreateDialog(true)
-          setWizardState({ step: 'goal', goalTitle: '', goalContext: '', attachments: [], questions: [], statusAnswers: [], planResult: null, isLoading: false, error: null })
-        }}
-      />
+    <>
+      {isMobile ? (
+        /* ========== 移动端单栏布局 ========== */
+        <div className="h-[calc(100vh-7.5rem)] flex flex-col animate-in">
+          {/* Mobile Tab Switcher */}
+          <div className="flex bg-white/80 backdrop-blur-sm border-b border-pink-200/20 shrink-0">
+            <button onClick={() => setMobileTab('list')} className={mobileTabClass('list')}>
+              目标列表
+            </button>
+            <button
+              onClick={() => selectedGoal && setMobileTab('detail')}
+              className={cn(mobileTabClass('detail'), !selectedGoal && 'opacity-40')}
+            >
+              详情
+            </button>
+            <button onClick={() => setMobileTab('alice')} className={mobileTabClass('alice')}>
+              艾莉丝
+            </button>
+          </div>
 
-      {/* CENTER — 目标详情 */}
-      <GoalDetailPanel
-        selectedGoal={selectedGoal}
-        goalsVersion={goalsVersion}
-        onStartQuiz={handleStartQuiz}
-        onShowNewGoal={() => setShowNewGoalDialog(true)}
-        onShowSmartCreate={() => {
-          setShowSmartCreateDialog(true)
-          setWizardState({ step: 'goal', goalTitle: '', goalContext: '', attachments: [], questions: [], statusAnswers: [], planResult: null, isLoading: false, error: null })
-        }}
-        onDeleteGoal={(goalId) => {
-          deleteGoal(goalId)
-          setSelectedGoalId(null)
-        }}
-        onGoalComplete={handleGoalComplete}
-        formatTimeDisplay={formatTimeDisplay}
-        onGenerateFinalExam={handleGenerateFinalExam}
-      />
+          {/* Content Area */}
+          <div className="flex-1 overflow-hidden">
+            {mobileTab === 'list' && (
+              <GoalListPanel
+                goals={goals}
+                selectedGoalId={selectedGoalId}
+                searchQuery={searchQuery}
+                onSearchChange={setSearchQuery}
+                onSelectGoal={(id) => { setSelectedGoalId(id); setMobileTab('detail') }}
+                onNewGoal={() => setShowNewGoalDialog(true)}
+                onSmartCreate={() => {
+                  setShowSmartCreateDialog(true)
+                  setWizardState({ step: 'goal', goalTitle: '', goalContext: '', attachments: [], questions: [], statusAnswers: [], planResult: null, isLoading: false, error: null })
+                }}
+              />
+            )}
 
-      {/* RIGHT — 艾莉丝聊天 */}
-      <AliceChatPanel selectedGoal={selectedGoal} />
+            {mobileTab === 'detail' && (
+              selectedGoal ? (
+                <GoalDetailPanel
+                  selectedGoal={selectedGoal}
+                  goalsVersion={goalsVersion}
+                  onStartQuiz={handleStartQuiz}
+                  onShowNewGoal={() => setShowNewGoalDialog(true)}
+                  onShowSmartCreate={() => {
+                    setShowSmartCreateDialog(true)
+                    setWizardState({ step: 'goal', goalTitle: '', goalContext: '', attachments: [], questions: [], statusAnswers: [], planResult: null, isLoading: false, error: null })
+                  }}
+                  onDeleteGoal={(goalId) => {
+                    deleteGoal(goalId)
+                    setSelectedGoalId(null)
+                    setMobileTab('list')
+                  }}
+                  onGoalComplete={handleGoalComplete}
+                  formatTimeDisplay={formatTimeDisplay}
+                  onGenerateFinalExam={handleGenerateFinalExam}
+                />
+              ) : (
+                <div className="flex flex-col items-center justify-center h-full text-muted-foreground gap-3 px-4">
+                  <span className="text-5xl">📋</span>
+                  <p className="text-sm">请先在「目标列表」中选择一个目标</p>
+                  <button
+                    onClick={() => setMobileTab('list')}
+                    className="text-sm text-sakura underline underline-offset-2"
+                  >
+                    前往列表
+                  </button>
+                </div>
+              )
+            )}
 
-      {/* ====== DIALOGS ====== */}
+            {mobileTab === 'alice' && (
+              <AliceChatPanel selectedGoal={selectedGoal} />
+            )}
+          </div>
+        </div>
+      ) : (
+        /* ========== 桌面端三栏布局 ========== */
+        <div className="h-[calc(100vh-7.5rem)] flex gap-4 animate-in goals-dashboard">
+          {/* LEFT — 目标列表 */}
+          <GoalListPanel
+            goals={goals}
+            selectedGoalId={selectedGoalId}
+            searchQuery={searchQuery}
+            onSearchChange={setSearchQuery}
+            onSelectGoal={setSelectedGoalId}
+            onNewGoal={() => setShowNewGoalDialog(true)}
+            onSmartCreate={() => {
+              setShowSmartCreateDialog(true)
+              setWizardState({ step: 'goal', goalTitle: '', goalContext: '', attachments: [], questions: [], statusAnswers: [], planResult: null, isLoading: false, error: null })
+            }}
+          />
+
+          {/* CENTER — 目标详情 */}
+          <GoalDetailPanel
+            selectedGoal={selectedGoal}
+            goalsVersion={goalsVersion}
+            onStartQuiz={handleStartQuiz}
+            onShowNewGoal={() => setShowNewGoalDialog(true)}
+            onShowSmartCreate={() => {
+              setShowSmartCreateDialog(true)
+              setWizardState({ step: 'goal', goalTitle: '', goalContext: '', attachments: [], questions: [], statusAnswers: [], planResult: null, isLoading: false, error: null })
+            }}
+            onDeleteGoal={(goalId) => {
+              deleteGoal(goalId)
+              setSelectedGoalId(null)
+            }}
+            onGoalComplete={handleGoalComplete}
+            formatTimeDisplay={formatTimeDisplay}
+            onGenerateFinalExam={handleGenerateFinalExam}
+          />
+
+          {/* RIGHT — 艾莉丝聊天 */}
+          <AliceChatPanel selectedGoal={selectedGoal} />
+        </div>
+      )}
+
+      {/* ====== DIALOGS（移动端/桌面端共享） ====== */}
 
       {/* New Goal Dialog */}
       <NewGoalDialog
@@ -749,6 +842,6 @@ export function GoalsPage() {
           />
         ) : null
       })()}
-    </div>
+    </>
   )
 }

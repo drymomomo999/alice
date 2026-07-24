@@ -8,3 +8,6 @@ questmind-project-plan.docx
 # Windows accidental reserved-name files
 nul
 **/nul
+
+# Python / temp
+.codex_py/

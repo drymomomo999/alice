@@ -144,6 +144,39 @@ npm install
 npm run dev
 ```
 
+---
+
+## 五、艾莉丝生成式定制声线
+
+小屋语音通过 MiniMax「音色设计 + speech-2.8-hd」生成。API Key 仅保存在
+Supabase Edge Function 的 Secret 中，不要写入 `.env` 或前端代码。
+
+**步骤 1：获取 MiniMax API Key**
+
+前往 MiniMax 开放平台的「接口密钥」页面创建按量付费 API Key。
+
+**步骤 2：配置服务端 Secret**
+
+```bash
+supabase secrets set MINIMAX_API_KEY=你的真实Key
+```
+
+如果已经在 MiniMax 控制台生成并选定了固定音色，也可以额外指定：
+
+```bash
+supabase secrets set ALICE_VOICE_ID=你的voice_id
+```
+
+不指定 `ALICE_VOICE_ID` 时，首次朗读会根据项目内的艾莉丝角色声线描述自动生成。
+
+**步骤 3：部署声线函数**
+
+```bash
+supabase functions deploy alice-voice
+```
+
+部署后，小屋会优先使用生成式定制音色；服务未配置或暂时不可用时，才会自动降级到系统中文语音。右上角的滑杆按钮可调整声线描述、表现风格、语速和音调，并重新生成试听。
+
 访问 `http://localhost:5173`
 
 ---

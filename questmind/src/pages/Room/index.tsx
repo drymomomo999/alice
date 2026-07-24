@@ -1,7 +1,17 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { motion, AnimatePresence } from 'framer-motion'
-import { History, X, Crown, ArrowLeft, Trash2, BookOpen } from 'lucide-react'
+import {
+  History,
+  X,
+  Crown,
+  ArrowLeft,
+  Trash2,
+  BookOpen,
+  SlidersHorizontal,
+  Volume2,
+  VolumeX,
+} from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { RoomBackground } from '@/components/AliceRoom/RoomBackground'
 import { CharacterSprite } from '@/components/AliceRoom/CharacterSprite'
@@ -11,7 +21,9 @@ import { sendAIMessage } from '@/services/ai.service'
 import { MarkdownRenderer } from '@/components/MarkdownRenderer'
 import { useUserStore, useAIChatStore } from '@/store'
 import { formatLastVisit } from '@/services/alice.service'
+import { useAliceVoice } from '@/hooks/useAliceVoice'
 import { ProfilePanel } from './ProfilePanel'
+import { VoiceSettingsPanel } from './VoiceSettingsPanel'
 import {
   loadProfile,
   saveProfile,
@@ -88,7 +100,10 @@ export function RoomPage() {
   } = useAIChatStore()
 
   // 从 store 取 alice 的历史消息
-  const persistedMessages = allMessages['alice'] || []
+  const persistedMessages = useMemo(
+    () => allMessages['alice'] || [],
+    [allMessages]
+  )
 
   // 上次访问时间
   const lastVisitTimestamp = lastVisit['alice']
@@ -97,6 +112,7 @@ export function RoomPage() {
   // 动态人物档案（从 localStorage 加载）
   const [profile, setProfile] = useState<AliceProfile>(() => loadProfile())
   const [showProfilePanel, setShowProfilePanel] = useState(false)
+  const [showVoiceSettings, setShowVoiceSettings] = useState(false)
 
   // 构建初始问候（只在组件挂载时确定一次）
   const initialGreeting = useMemo(() => {
@@ -114,6 +130,21 @@ export function RoomPage() {
   const [inputValue, setInputValue] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [isSpeaking, setIsSpeaking] = useState(false)
+  const {
+    enabled: voiceEnabled,
+    isSpeaking: isVoiceSpeaking,
+    isDesigning: isVoiceDesigning,
+    supported: voiceSupported,
+    source: voiceSource,
+    lastError: voiceError,
+    settings: voiceSettings,
+    setEnabled: setVoiceEnabled,
+    updateSettings: updateVoiceSettings,
+    resetSettings: resetVoiceSettings,
+    previewCustomVoice,
+    speak: speakAsAlice,
+    cancel: cancelAliceVoice,
+  } = useAliceVoice()
 
   // 当前对话框显示文本（打字机效果用）
   const [activeDialogText, setActiveDialogText] = useState(initialGreeting)
@@ -130,6 +161,10 @@ export function RoomPage() {
     markVisit('alice')
     // 打字机开始播放初始问候
     setIsSpeaking(true)
+    const greetingTimer = setTimeout(() => {
+      speakAsAlice(initialGreeting, 'proud')
+    }, 450)
+    return () => clearTimeout(greetingTimer)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -163,7 +198,8 @@ export function RoomPage() {
   // 点击立绘跳过打字机
   const handleSpriteClick = useCallback(() => {
     setIsSpeaking(false)
-  }, [])
+    cancelAliceVoice()
+  }, [cancelAliceVoice])
 
   // 表情图片（用于历史面板头像）
   const expressionImages = getExpressionImages()
@@ -227,6 +263,7 @@ export function RoomPage() {
 
       setActiveDialogText(response)
       setIsSpeaking(true)
+      speakAsAlice(response, inferredExpression)
 
       // ── 后台：递增消息计数 + 自动分析用户偏好（完全隐藏，用户无感知）──
       const updatedProfile: AliceProfile = {
@@ -284,24 +321,42 @@ export function RoomPage() {
       setActiveDialogText(errText)
       setExpressionWithReset('sad')
       setIsSpeaking(true)
+      speakAsAlice(errText, 'sad')
     } finally {
       setIsLoading(false)
     }
-  }, [inputValue, isLoading, persistedMessages, user, profile, lastVisitInfo, addMessage, setExpressionWithReset])
+  }, [inputValue, isLoading, persistedMessages, user, profile, lastVisitInfo, addMessage, setExpressionWithReset, speakAsAlice])
 
   // 清除对话历史
   const handleClearHistory = useCallback(() => {
     clearMessages('alice')
     setShowClearConfirm(false)
     setShowHistory(false)
-    setActiveDialogText('嗯……之前说的都清掉了。从头开始也挺好的，想聊什么呢？')
+    const resetText = '嗯……之前说的都清掉了。从头开始也挺好的，想聊什么呢？'
+    setActiveDialogText(resetText)
     setIsSpeaking(true)
+    speakAsAlice(resetText, 'shy')
 
     // 重置消息计数器（保留 AI 已分析的偏好数据）
     const resetProfile = { ...profile, messagesSinceLastAnalysis: 0 }
     setProfile(resetProfile)
     saveProfile(resetProfile)
-  }, [clearMessages, profile])
+  }, [clearMessages, profile, speakAsAlice])
+
+  const handleVoiceToggle = useCallback(() => {
+    const nextEnabled = !voiceEnabled
+    setVoiceEnabled(nextEnabled)
+    if (nextEnabled && activeDialogText && !isLoading) {
+      speakAsAlice(activeDialogText, currentExpression)
+    }
+  }, [
+    voiceEnabled,
+    setVoiceEnabled,
+    activeDialogText,
+    isLoading,
+    speakAsAlice,
+    currentExpression,
+  ])
 
   const loadingDialogText = isLoading ? '...' : activeDialogText
 
@@ -313,7 +368,7 @@ export function RoomPage() {
       {/* 角色立绘 */}
       <CharacterSprite
         expression={currentExpression}
-        isSpeaking={isSpeaking}
+        isSpeaking={isSpeaking || isVoiceSpeaking}
         onClick={handleSpriteClick}
       />
 
@@ -325,7 +380,7 @@ export function RoomPage() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 10, scale: 0.8 }}
             className="absolute z-20 left-1/2 -translate-x-1/2"
-            style={{ bottom: 'calc(22% + 62vh)' }}
+            style={{ bottom: 'calc(22% + 55vh)' }}
           >
             <span className="text-xs bg-white/80 backdrop-blur-sm rounded-full px-2.5 py-1 shadow-md border border-pink-200/40">
               {ALICE_EXPRESSIONS[currentExpression].emoji} {ALICE_EXPRESSIONS[currentExpression].label}
@@ -349,6 +404,33 @@ export function RoomPage() {
           <Crown className="w-4 h-4 text-pink-400" />
           <span className="text-xs font-semibold text-pink-700">深圳 · 艾莉丝的小屋</span>
         </div>
+        {voiceSupported && (
+          <button
+            onClick={handleVoiceToggle}
+            className="p-2 rounded-full bg-white/70 backdrop-blur-sm shadow-sm border border-pink-200/30 hover:bg-white/90 transition-colors"
+            title={
+              voiceEnabled
+                ? '关闭艾莉丝语音'
+                : '开启艾莉丝语音'
+            }
+            aria-label={voiceEnabled ? '关闭艾莉丝语音' : '开启艾莉丝语音'}
+            aria-pressed={voiceEnabled}
+          >
+            {voiceEnabled ? (
+              <Volume2 className={`w-4 h-4 text-pink-600 ${isVoiceSpeaking ? 'animate-pulse' : ''}`} />
+            ) : (
+              <VolumeX className="w-4 h-4 text-pink-400" />
+            )}
+          </button>
+        )}
+        <button
+          onClick={() => setShowVoiceSettings(true)}
+          className="p-2 rounded-full bg-white/70 backdrop-blur-sm shadow-sm border border-pink-200/30 hover:bg-white/90 transition-colors"
+          title="定制艾莉丝声线"
+          aria-label="定制艾莉丝声线"
+        >
+          <SlidersHorizontal className="w-4 h-4 text-pink-600" />
+        </button>
         <button
           onClick={() => setShowProfilePanel(true)}
           className="p-2 rounded-full bg-white/70 backdrop-blur-sm shadow-sm border border-pink-200/30 hover:bg-white/90 transition-colors"
@@ -504,6 +586,22 @@ export function RoomPage() {
               </div>
             </motion.div>
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* 角色声线工坊 */}
+      <AnimatePresence>
+        {showVoiceSettings && (
+          <VoiceSettingsPanel
+            settings={voiceSettings}
+            source={voiceSource}
+            isDesigning={isVoiceDesigning}
+            error={voiceError}
+            onChange={updateVoiceSettings}
+            onPreview={previewCustomVoice}
+            onReset={resetVoiceSettings}
+            onClose={() => setShowVoiceSettings(false)}
+          />
         )}
       </AnimatePresence>
 
