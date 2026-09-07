@@ -17,7 +17,28 @@ path = "src/main.rs"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["tray-icon"] }
+tauri = { version = "2", features = ["tray-icon", "macos-private-api"] }
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+
+# Release 编译优化（修"启动慢"根本）：
+#   lto=true          链接时跨 crate 内联，二进制更小、启动更快
+#   codegen-units=1   单代码生成单元，最大化内联机会
+#   panic=abort       不生成 unwind 表，二进制显著减小
+#   strip=true        剥除符号表与调试信息
+#   opt-level="s"     体积优先（也可改 3 速度优先）
+#   incremental=false release 不需要增量编译
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+incremental = false
+
+# Dev 编译优化（tauri dev 体感）：增量编译打开，debug 符号线数 1（保持 panic 信息可读）
+[profile.dev]
+opt-level = 0
+debug = 1
+incremental = true

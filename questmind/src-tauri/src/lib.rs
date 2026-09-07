@@ -1,3 +1,7 @@
+// Release/打包后作为 Windows GUI 应用运行：不弹 cmd 控制台窗口，不显示 stdout/stderr。
+// Debug 模式 (tauri dev) 保留终端，方便排查。
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 use std::{
     env, fs, io::ErrorKind, path::PathBuf, process::Command,
 };
