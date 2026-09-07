@@ -1,8 +1,11 @@
 import type { AliceExpression } from '@/assets/alice'
+import type { AliceVoiceState } from '@/types'
 
-const VOICE_SETTINGS_KEY = 'questmind:alice-voice-settings-v2'
+// Bump this key when replacing Alice's canonical voice so an old generated
+// voice id cannot silently override the new direction.
+const VOICE_SETTINGS_KEY = 'questmind:alice-voice-settings-v5'
 
-export type AliceVoiceStyle = 'gentle' | 'confident' | 'lively'
+export type AliceVoiceStyle = 'reserved' | 'gentle' | 'sharp'
 
 export interface AliceVoiceSettings {
   speed: number
@@ -29,23 +32,25 @@ export class AliceVoiceServiceError extends Error {
 
 export const ALICE_VOICE_DESCRIPTION = [
   '一位二十岁出头的成年女性，普通话母语。',
-  '音色明亮清澈、温暖通透，处于自然的中高音区，但绝不尖细或幼态。',
-  '声音带少量柔和气息和丝绸般的质感，咬字精致清楚，尾音轻盈而克制。',
-  '她有黑金礼服般的优雅与大小姐式的从容自信，同时保留亲近、体贴的笑意。',
-  '日常交谈自然、不播音腔、不夸张卖萌；认真解释时沉稳可信，开心时灵动但不吵闹。',
-  '整体听感独特、有辨识度，像一位聪明温柔、偶尔有点小骄傲的长期陪伴者。',
+  '音色清澈偏冷、干净利落，处于自然的中高音区；成熟但不年长，不尖细、不幼态、不甜腻。',
+  '她像一位能力很强的私人秘书：专业、周到、始终提前半步，开口时便让人觉得事情已经被妥善接住。',
+  '咬字清楚准确，信息段节奏干练，重点明确；每句长短和重音略有变化，不做匀速朗读。',
+  '她的礼貌自然而不刻意，不卑微、不谄媚、不像客服；声音里有微弱的笑意和可靠感，但不卖萌。',
+  '汇报安排时从容高效，提醒风险时稍微压低声线，确认指令时简洁笃定，给出关心时则放慢并轻轻收住句尾。',
+  '她会用很轻的呼吸、短暂停顿和语气转折表达思考；情绪越深，表达越克制，但不失去人味。',
+  '整体听感是知性、自律、值得依赖，私下又有一点只留给对方的温度；不用播音腔，不演成高傲、机械或过度热情。',
 ].join('')
 
 export const DEFAULT_ALICE_VOICE_SETTINGS: AliceVoiceSettings = {
-  speed: 0.95,
-  pitch: 0,
-  style: 'gentle',
+  speed: 0.98,
+  pitch: -1,
+  style: 'reserved',
   description: ALICE_VOICE_DESCRIPTION,
   voiceId: null,
 }
 
 function isVoiceStyle(value: unknown): value is AliceVoiceStyle {
-  return value === 'gentle' || value === 'confident' || value === 'lively'
+  return value === 'reserved' || value === 'gentle' || value === 'sharp'
 }
 
 export function loadAliceVoiceSettings(): AliceVoiceSettings {
@@ -124,16 +129,40 @@ async function requestVoiceAudio(
   }
 }
 
+function directPerformanceText(
+  rawText: string,
+  expression: AliceExpression | null,
+  voiceState: AliceVoiceState
+): string {
+  let text = rawText
+    .replace(/<#\d+(?:\.\d+)?#>/g, '')
+    .replace(/\((?:laughs|chuckle|coughs|clear-throat|groans|breath|pant|inhale|exhale|gasps|sniffs|sighs|snorts|burps|lip-smacking|humming|hissing|emm|sneezes)\)/gi, '')
+    .replace(/(?:……|…|\.{3,})(?=.)/g, '<#0.42#>')
+    .replace(/。(?=.)/g, '。<#0.18#>')
+    .replace(/[？?](?=.)/g, (mark) => `${mark}<#0.24#>`)
+    .replace(/[！!](?=.)/g, (mark) => `${mark}<#0.14#>`)
+    .replace(/[；;](?=.)/g, (mark) => `${mark}<#0.2#>`)
+    .replace(/^嗯[,，]?/, '(emm)<#0.14#>')
+    .replace(/^唉[,，]?/, '(sighs)<#0.16#>')
+
+  if (voiceState === 'SOFT' || voiceState === 'CONCERNED') text = `(breath)${text}`
+  if (voiceState === 'PLAYFUL' && /(?:真是|当然|果然)/.test(text)) text = `(chuckle)${text}`
+  if (expression === 'surprised' && !text.startsWith('(gasps)')) text = `(gasps)${text}`
+  return text
+}
+
 export async function synthesizeAliceVoice(
   text: string,
   expression: AliceExpression | null,
+  voiceState: AliceVoiceState,
   settings: AliceVoiceSettings,
   signal?: AbortSignal
 ): Promise<AliceVoiceAudio> {
   return requestVoiceAudio({
     action: 'synthesize',
-    text,
+    text: directPerformanceText(text, expression, voiceState),
     expression,
+    voiceState,
     voiceId: settings.voiceId,
     speed: settings.speed,
     pitch: settings.pitch,

@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { categoryConfig } from './GoalListPanel'
 import { uploadGoalAttachment, isAcceptableFileType, getAttachmentType, formatFileSize } from '@/services/supabase'
 import { extractTextFromFile } from '@/lib/fileExtractor'
+import { classifyGoalAttachment } from '@/course-engine/service'
 import { generateId } from '@/lib/utils'
 import type { GoalCategory, GoalPriority, GoalAttachment } from '@/types'
 
@@ -60,7 +61,7 @@ export function NewGoalDialog({ open, onOpenChange, newGoal, setNewGoal, onCreat
         const extractedText = await extractTextFromFile(file)
         const attType = getAttachmentType(file.type)
 
-        newAttachments.push({
+        newAttachments.push(classifyGoalAttachment({
           id: generateId(),
           name: file.name,
           type: attType,
@@ -70,7 +71,7 @@ export function NewGoalDialog({ open, onOpenChange, newGoal, setNewGoal, onCreat
           url: uploadResult.url,
           extractedText: attType === 'document' ? extractedText || undefined : undefined,
           uploadedAt: new Date().toISOString(),
-        })
+        }, newGoal.title || '未归类课程'))
       }
 
       setNewGoal(prev => ({ ...prev, attachments: newAttachments }))

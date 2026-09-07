@@ -230,13 +230,17 @@ export async function saveAIMessageToDb(
   userId: string,
   characterId: string,
   content: string,
-  isUser: boolean
+  isUser: boolean,
+  scene?: 'HOME' | 'GOAL',
+  goalId?: string
 ): Promise<boolean> {
   try {
     await db.saveAIMessage(userId, {
       characterId: characterId as any,
       content,
-      isUser
+      isUser,
+      scene,
+      goalId,
     })
     return true
   } catch (error) {

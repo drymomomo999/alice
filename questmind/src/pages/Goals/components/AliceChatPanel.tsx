@@ -22,6 +22,18 @@ import {
 } from '@/services/ai.service'
 import type { Goal } from '@/types'
 import AliceCharacter from '@/assets/alice-character.png'
+import {
+  buildAliceContext,
+  decideAliceAction,
+  selectSceneHistory,
+  serializeAliceRuntimeContext,
+  updateConversationState,
+} from '@/services/aliceDialogue.service'
+import {
+  recordRelationshipResponse,
+  recordRelationshipUserMessage,
+} from '@/services/aliceRelationship.service'
+import { syncRelationshipStoreToCloud } from '@/services/aliceRelationshipCloud.service'
 
 // ============================================================
 // 类型
@@ -91,6 +103,13 @@ const QUICK_ACTIONS: QuickAction[] = [
     description: '一键生成可翻牌的知识速记卡',
     color: 'text-indigo-500',
   },
+]
+
+const CONTINUE_PATTERNS = [
+  '继续', '接着讲', '再深入', '再讲讲', '继续讲', '往下讲',
+  '再详细一点', '展开说说', '详细讲讲', '多说一点',
+  '换一个例子', '换个例子', '再举个例子', '还有呢',
+  '没听懂', '没理解', '没搞懂', '再解释', '重新讲',
 ]
 
 // 格式化时间
@@ -237,7 +256,7 @@ function FlashcardViewer({ cards, onClose }: { cards: Flashcard[]; onClose: () =
 export function AliceChatPanel({ selectedGoal }: AliceChatPanelProps) {
   const { user, isDemo } = useUserStore()
   const { goals } = useGoalsStore()
-  const { addMessage, saveToDb } = useAIChatStore()
+  const { messages: persistedChatMessages, addMessage, saveToDb } = useAIChatStore()
 
   // 聊天状态
   const [inputValue, setInputValue] = useState('')
@@ -304,17 +323,18 @@ export function AliceChatPanel({ selectedGoal }: AliceChatPanelProps) {
       content: `看来你正在执行「${selectedGoal.title}」（进度 ${selectedGoal.progress}%）。有什么需要我帮忙的吗？${docHint}\n\n你可以点下方的 ✨ 按钮，让我帮你讲解这门课的内容。`,
       timestamp: new Date(),
     }
-    setLocalMessages(prev => [...prev, contextMsg])
-  }, [selectedGoal, prevGoalId])
+    const savedGoalMessages = selectSceneHistory(
+      persistedChatMessages.alice || [], 'GOAL', selectedGoal.id, 30
+    ).map(message => ({
+      id: message.id,
+      role: message.isUser ? 'user' as const : 'ai' as const,
+      content: message.content,
+      timestamp: new Date(message.timestamp),
+    }))
+    setLocalMessages(savedGoalMessages.length > 0 ? savedGoalMessages : [contextMsg])
+  }, [selectedGoal, prevGoalId, persistedChatMessages.alice])
 
   // 连续讲解流检测 — 判断用户消息是否是在要求"继续/深入/换角度"
-  const CONTINUE_PATTERNS = [
-    '继续', '接着讲', '再深入', '再讲讲', '继续讲', '往下讲',
-    '再详细一点', '展开说说', '详细讲讲', '多说一点',
-    '换一个例子', '换个例子', '再举个例子', '还有呢',
-    '没听懂', '没理解', '没搞懂', '再解释', '重新讲',
-  ]
-
   const isContinueLecture = useCallback((text: string): boolean => {
     const trimmed = text.trim()
     return CONTINUE_PATTERNS.some(p => trimmed.includes(p))
@@ -390,8 +410,11 @@ export function AliceChatPanel({ selectedGoal }: AliceChatPanelProps) {
     }
     setLocalMessages(prev => [...prev, userMsg])
 
-    addMessage('alice', { content: aiReadableContent, isUser: true, characterId: 'alice' })
-    if (user && !isDemo) saveToDb(user.id, 'alice', aiReadableContent, true)
+    addMessage('alice', {
+      content: aiReadableContent, isUser: true, characterId: 'alice',
+      scene: 'GOAL', goalId: selectedGoal?.id,
+    })
+    if (user && !isDemo) saveToDb(user.id, 'alice', aiReadableContent, true, 'GOAL', selectedGoal?.id)
 
     try {
       // === 连续讲解流检测 ===
@@ -419,8 +442,11 @@ export function AliceChatPanel({ selectedGoal }: AliceChatPanelProps) {
           isLecture: true,
         }
         setLocalMessages(prev => [...prev, aiMsg])
-        addMessage('alice', { content: response, isUser: false, characterId: 'alice' })
-        if (user && !isDemo) saveToDb(user.id, 'alice', response, false)
+        addMessage('alice', {
+          content: response, isUser: false, characterId: 'alice',
+          scene: 'GOAL', goalId: selectedGoal.id,
+        })
+        if (user && !isDemo) saveToDb(user.id, 'alice', response, false, 'GOAL', selectedGoal.id)
         return
       }
 
@@ -443,7 +469,26 @@ export function AliceChatPanel({ selectedGoal }: AliceChatPanelProps) {
             : m.content,
           timestamp: m.timestamp.toISOString(),
           isUser: m.role === 'user',
+          scene: 'GOAL' as const,
+          goalId: selectedGoal?.id,
         }))
+
+      const relationshipStore = recordRelationshipUserMessage({
+        userId: user?.id || 'demo',
+        scene: 'GOAL',
+        goalId: selectedGoal?.id,
+        message: text,
+      })
+      void syncRelationshipStoreToCloud(relationshipStore)
+
+      const aliceContext = buildAliceContext({
+        scene: 'GOAL',
+        user: { id: user?.id || 'demo', name: user?.nickname || '来访者' },
+        goal: selectedGoal || undefined,
+        messages: messageHistory,
+      })
+      const dialogueDecision = decideAliceAction(text, aliceContext)
+      updateConversationState(aliceContext, dialogueDecision, text)
 
       const response = await sendAIMessage({
         characterId: 'alice',
@@ -452,12 +497,24 @@ export function AliceChatPanel({ selectedGoal }: AliceChatPanelProps) {
         currentGoals: goalContext ? [goalContext, ...activeGoals] : activeGoals,
         selectedGoalContext,
         messageHistory,
+        scene: 'GOAL',
+        goalId: selectedGoal?.id,
+        runtimeContext: serializeAliceRuntimeContext(aliceContext, dialogueDecision),
       })
+      const relationshipAfterResponse = recordRelationshipResponse(
+        user?.id || 'demo',
+        aliceContext.relationship,
+        'GOAL',
+      )
+      void syncRelationshipStoreToCloud(relationshipAfterResponse)
 
       const aiMsg: ChatMessage = { id: `ai-${Date.now()}`, role: 'ai', content: response, timestamp: new Date() }
       setLocalMessages(prev => [...prev, aiMsg])
-      addMessage('alice', { content: response, isUser: false, characterId: 'alice' })
-      if (user && !isDemo) saveToDb(user.id, 'alice', response, false)
+      addMessage('alice', {
+        content: response, isUser: false, characterId: 'alice',
+        scene: 'GOAL', goalId: selectedGoal?.id,
+      })
+      if (user && !isDemo) saveToDb(user.id, 'alice', response, false, 'GOAL', selectedGoal?.id)
     } catch {
       setLocalMessages(prev => [...prev, {
         id: `ai-err-${Date.now()}`,

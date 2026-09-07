@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { AliceExpression } from '@/assets/alice'
+import type { AliceVoiceState } from '@/types'
 import {
   DEFAULT_ALICE_VOICE_SETTINGS,
   AliceVoiceServiceError,
@@ -11,19 +12,34 @@ import {
 } from '@/services/aliceVoice.service'
 
 const VOICE_ENABLED_KEY = 'questmind:alice-voice-enabled'
+const VOICE_PREVIEW_TEXT =
+  '早上好。今天的安排我已经整理好了：十点前先处理最紧急的两项任务，其余事项我会按优先级提醒你。不过……你昨晚休息得太晚了。先喝口水，稍微缓一缓吧。别担心，剩下的交给我。'
 
 const EXPRESSION_PROSODY: Record<
   AliceExpression,
-  { rate: number; pitch: number }
+  { rate: number; pitch: number; volume: number }
 > = {
-  happy: { rate: 1.0, pitch: 1.12 },
-  shy: { rate: 0.9, pitch: 1.1 },
-  angry: { rate: 0.96, pitch: 1.02 },
-  surprised: { rate: 1.03, pitch: 1.14 },
-  sleepy: { rate: 0.84, pitch: 1.02 },
-  thinking: { rate: 0.9, pitch: 1.06 },
-  proud: { rate: 0.95, pitch: 1.08 },
-  sad: { rate: 0.86, pitch: 1.03 },
+  happy: { rate: 1.02, pitch: 1.03, volume: 0.96 },
+  shy: { rate: 0.91, pitch: 1.0, volume: 0.86 },
+  angry: { rate: 1.01, pitch: 0.95, volume: 1 },
+  surprised: { rate: 1.05, pitch: 1.06, volume: 0.98 },
+  sleepy: { rate: 0.84, pitch: 0.94, volume: 0.8 },
+  thinking: { rate: 0.94, pitch: 0.98, volume: 0.9 },
+  proud: { rate: 0.99, pitch: 0.97, volume: 0.95 },
+  sad: { rate: 0.88, pitch: 0.94, volume: 0.84 },
+}
+
+type SystemProsody = { rate: number; pitch: number; volume: number }
+
+const VOICE_STATE_PROSODY: Record<AliceVoiceState, SystemProsody> = {
+  NEUTRAL: { rate: 0.98, pitch: 0.98, volume: 0.93 },
+  RELAXED: { rate: 0.95, pitch: 0.98, volume: 0.9 },
+  HAPPY: { rate: 1.03, pitch: 1.03, volume: 0.96 },
+  SERIOUS: { rate: 0.98, pitch: 0.94, volume: 0.95 },
+  CONCERNED: { rate: 0.9, pitch: 0.95, volume: 0.84 },
+  PLAYFUL: { rate: 1.04, pitch: 1.01, volume: 0.95 },
+  FOCUSED: { rate: 1, pitch: 0.96, volume: 0.94 },
+  SOFT: { rate: 0.88, pitch: 0.95, volume: 0.8 },
 }
 
 function getInitialEnabled(): boolean {
@@ -73,28 +89,44 @@ function makeSpeechText(markdown: string): string {
     .trim()
 }
 
-function splitSpeechText(text: string, maxLength = 180): string[] {
+function splitPerformanceText(text: string): string[] {
   const sentences = text.match(/[^。！？!?；;\n]+[。！？!?；;]?/g) ?? [text]
-  const chunks: string[] = []
-  let current = ''
+  return sentences.flatMap((sentence) => {
+    const trimmed = sentence.trim()
+    if (trimmed.length <= 72) return trimmed ? [trimmed] : []
+    return trimmed.match(/[^，,、：:]+[，,、：:]?/g)?.map((part) => part.trim()).filter(Boolean) ?? [trimmed]
+  })
+}
 
-  for (const sentence of sentences) {
-    if (current && current.length + sentence.length > maxLength) {
-      chunks.push(current.trim())
-      current = ''
-    }
-    if (sentence.length > maxLength) {
-      for (let index = 0; index < sentence.length; index += maxLength) {
-        const part = sentence.slice(index, index + maxLength).trim()
-        if (part) chunks.push(part)
-      }
-    } else {
-      current += sentence
-    }
+function directSystemPerformance(
+  text: string,
+  base: SystemProsody,
+  index: number,
+  total: number
+): SystemProsody {
+  let { rate, pitch, volume } = base
+  if (/[!?！？]$/.test(text)) {
+    rate += text.endsWith('？') || text.endsWith('?') ? -0.02 : 0.04
+    pitch += 0.035
   }
-
-  if (current.trim()) chunks.push(current.trim())
-  return chunks
+  if (/……|…/.test(text)) {
+    rate -= 0.06
+    pitch -= 0.015
+  }
+  if (/没事|别怕|不必|慢慢|休息|我会在/.test(text)) {
+    rate -= 0.045
+    volume -= 0.055
+  }
+  if (/先说好|显然|不过|但是|与其|倒不如/.test(text)) {
+    rate += 0.025
+    pitch -= 0.025
+  }
+  if (index === total - 1) rate -= 0.025
+  return {
+    rate: Math.min(1.18, Math.max(0.72, rate)),
+    pitch: Math.min(1.18, Math.max(0.78, pitch)),
+    volume: Math.min(1, Math.max(0.65, volume)),
+  }
 }
 
 export type AliceVoiceSource = 'custom' | 'system' | 'idle'
@@ -173,6 +205,7 @@ export function useAliceVoice() {
   const speakWithSystemVoice = useCallback((
     text: string,
     expression: AliceExpression | null,
+    voiceState: AliceVoiceState,
     playbackId: number
   ) => {
     if (!systemSupported) {
@@ -180,11 +213,15 @@ export function useAliceVoice() {
       return
     }
 
-    const chunks = splitSpeechText(text)
+    const chunks = splitPerformanceText(text)
     const voice = chooseFallbackVoice(window.speechSynthesis.getVoices())
-    const prosody = expression
-      ? EXPRESSION_PROSODY[expression]
-      : { rate: 0.94, pitch: 1.08 }
+    const stateProsody = VOICE_STATE_PROSODY[voiceState]
+    const expressionProsody = expression ? EXPRESSION_PROSODY[expression] : stateProsody
+    const prosody = {
+      rate: (stateProsody.rate * 0.7) + (expressionProsody.rate * 0.3),
+      pitch: (stateProsody.pitch * 0.7) + (expressionProsody.pitch * 0.3),
+      volume: (stateProsody.volume * 0.7) + (expressionProsody.volume * 0.3),
+    }
     let index = 0
     setSource('system')
 
@@ -196,11 +233,12 @@ export function useAliceVoice() {
         return
       }
       const utterance = new SpeechSynthesisUtterance(chunk)
+      const directed = directSystemPerformance(chunk, prosody, index, chunks.length)
       utterance.lang = voice?.lang || 'zh-CN'
       utterance.voice = voice
-      utterance.rate = prosody.rate
-      utterance.pitch = prosody.pitch
-      utterance.volume = 0.92
+      utterance.rate = directed.rate
+      utterance.pitch = directed.pitch
+      utterance.volume = directed.volume
       utterance.onend = () => {
         index += 1
         playNext()
@@ -214,7 +252,8 @@ export function useAliceVoice() {
 
   const speak = useCallback(async (
     markdown: string,
-    expression: AliceExpression | null
+    expression: AliceExpression | null,
+    voiceState: AliceVoiceState = 'RELAXED'
   ) => {
     if (!enabledRef.current) return
     const text = makeSpeechText(markdown)
@@ -234,6 +273,7 @@ export function useAliceVoice() {
         customAudio = await synthesizeAliceVoice(
           text,
           expression,
+          voiceState,
           settingsRef.current,
           controller.signal
         )
@@ -265,7 +305,7 @@ export function useAliceVoice() {
     }
 
     if (playbackIdRef.current === playbackId) {
-      speakWithSystemVoice(text, expression, playbackId)
+      speakWithSystemVoice(text, expression, voiceState, playbackId)
     }
   }, [cancel, persistSettings, playAudioBlob, releaseAudio, speakWithSystemVoice])
 
@@ -278,6 +318,7 @@ export function useAliceVoice() {
     setIsDesigning(true)
     setIsSpeaking(true)
     setLastError(null)
+    let fallbackStarted = false
 
     try {
       const result = await designAliceVoice(settingsRef.current, controller.signal)
@@ -292,16 +333,23 @@ export function useAliceVoice() {
       await playAudioBlob(result.blob, playbackId)
     } catch (error) {
       if (!controller.signal.aborted) {
-        setLastError(error instanceof Error ? error.message : '声线设计失败')
+        const message = error instanceof Error ? error.message : '声线设计失败'
+        if (systemSupported) {
+          fallbackStarted = true
+          setLastError(`${message}；正在播放系统音色的近似试听。`)
+          speakWithSystemVoice(VOICE_PREVIEW_TEXT, 'thinking', 'RELAXED', playbackId)
+        } else {
+          setLastError(message)
+        }
       }
     } finally {
       if (abortRef.current === controller) abortRef.current = null
       if (playbackIdRef.current === playbackId) {
         setIsDesigning(false)
-        setIsSpeaking(false)
+        if (!fallbackStarted) setIsSpeaking(false)
       }
     }
-  }, [cancel, persistSettings, playAudioBlob])
+  }, [cancel, persistSettings, playAudioBlob, speakWithSystemVoice, systemSupported])
 
   const resetSettings = useCallback(() => {
     persistSettings({ ...DEFAULT_ALICE_VOICE_SETTINGS })

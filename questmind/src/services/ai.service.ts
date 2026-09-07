@@ -9,11 +9,11 @@
  * 2. Supabase Edge Function（生产推荐，API Key 不暴露前端）
  */
 
-import type { AICharacter, AIMessage, Goal, GoalCategory } from '@/types'
+import type { AICharacter, AIMessage, AliceScene, Goal, GoalCategory } from '@/types'
 import { generateId } from '@/lib/utils'
 import { getSupabase } from './supabase'
 import { REM_CONFIG, getRemSystemPrompt } from './rem.service'
-import { ALICE_CONFIG, getAliceSystemPrompt, getAliceRoomPromptWithMemory } from './alice.service'
+import { ALICE_CONFIG, getAliceGoalPrompt, getAliceRoomPromptWithMemory } from './alice.service'
 import RemAvatar from '@/assets/rem.png'
 
 const DEEPSEEK_API_URL = 'https://api.deepseek.com/v1/chat/completions'
@@ -232,14 +232,17 @@ export interface ChatCompletionMessage {
   content: string
 }
 
-interface SendMessageOptions {
+export interface SendMessageOptions {
   characterId: AICharacter
   userId: string
   userName: string
   currentGoals?: string[]
   selectedGoalContext?: string   // 目标的详细上下文（description + context + 附件文字）
   messageHistory?: AIMessage[]
-  scene?: 'room' | 'goals' | 'default'  // 场景：小屋闲聊 / 目标学习 / 默认
+  scene?: AliceScene
+  goalId?: string
+  /** Context Builder + Dialogue Manager 生成的内部运行上下文。 */
+  runtimeContext?: string
   // 小屋记忆感参数
   memorySummary?: string   // 从历史消息提炼的话题摘要
   lastVisitInfo?: string   // "3天前"、"昨天" 等人性化描述
@@ -253,7 +256,7 @@ function buildSystemPrompt(
   userName: string,
   currentGoals?: string[],
   selectedGoalContext?: string,
-  scene?: 'room' | 'goals' | 'default',
+  scene?: AliceScene,
   memorySummary?: string,
   lastVisitInfo?: string
 ): string {
@@ -268,13 +271,13 @@ function buildSystemPrompt(
   }
 
   // Alice 小屋场景：用纯聊天/朋友 prompt，注入记忆上下文
-  if (characterId === 'alice' && scene === 'room') {
+  if (characterId === 'alice' && scene === 'HOME') {
     return getAliceRoomPromptWithMemory(userName, memorySummary, lastVisitInfo)
   }
 
   // Alice 学习/目标 场景：用完整引导员 prompt
   if (characterId === 'alice') {
-    const alicePrompt = getAliceSystemPrompt()
+    const alicePrompt = getAliceGoalPrompt()
     let context = `\n\n当前用户：${userName}`
     if (currentGoals && currentGoals.length > 0) {
       context += `\n- 当前目标：${currentGoals.join('、')}`
@@ -429,14 +432,47 @@ async function callDirectDeepSeek(messages: ChatCompletionMessage[], maxTokens =
   }
 }
 
+const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六']
+
+/**
+ * 给历史消息注入时间标记（仅小屋场景使用）
+ * - 跨日时在当天第一条消息前加日期标记，如 [8月4日 周二]
+ * - 每条消息前加 HH:MM，如 [14:30]
+ * 让艾莉丝能区分"昨天发的"和"今天发的"，不再把时间搅在一起
+ */
+function formatHistoryWithTime(history: AIMessage[]): ChatCompletionMessage[] {
+  let lastDateKey = ''
+  const result: ChatCompletionMessage[] = []
+  for (const msg of history) {
+    const ts = msg.timestamp ? new Date(msg.timestamp) : null
+    let prefix = ''
+    if (ts && !isNaN(ts.getTime())) {
+      const dateKey = `${ts.getFullYear()}-${ts.getMonth()}-${ts.getDate()}`
+      if (dateKey !== lastDateKey) {
+        prefix = `[${ts.getMonth() + 1}月${ts.getDate()}日 周${WEEKDAYS[ts.getDay()]}] `
+        lastDateKey = dateKey
+      }
+      const hh = String(ts.getHours()).padStart(2, '0')
+      const mm = String(ts.getMinutes()).padStart(2, '0')
+      prefix += `[${hh}:${mm}] `
+    }
+    result.push({
+      role: msg.isUser ? 'user' : 'assistant',
+      content: prefix + msg.content
+    })
+  }
+  return result
+}
+
 /**
  * 发送消息给 AI 角色（主入口）
  */
 export async function sendAIMessage(options: SendMessageOptions): Promise<string> {
-  const { characterId, userName, currentGoals, selectedGoalContext, messageHistory, scene, memorySummary, lastVisitInfo, customSystemPrompt } = options
+  const { characterId, userName, currentGoals, selectedGoalContext, messageHistory, scene, memorySummary, lastVisitInfo, customSystemPrompt, runtimeContext } = options
 
-  const systemContent = customSystemPrompt
+  let systemContent = customSystemPrompt
     ?? buildSystemPrompt(characterId, userName, currentGoals, selectedGoalContext, scene, memorySummary, lastVisitInfo)
+  if (runtimeContext) systemContent += `\n\n${runtimeContext}`
 
   const messages: ChatCompletionMessage[] = [
     { role: 'system', content: systemContent }
@@ -444,13 +480,18 @@ export async function sendAIMessage(options: SendMessageOptions): Promise<string
 
   // 携带历史消息作为上下文：小屋场景取最近 30 条，其他场景取 20 条
   if (messageHistory && messageHistory.length > 0) {
-    const limit = scene === 'room' ? 30 : 20
+    const limit = scene === 'HOME' ? 30 : 20
     const recentHistory = messageHistory.slice(-limit)
-    for (const msg of recentHistory) {
-      messages.push({
-        role: msg.isUser ? 'user' : 'assistant',
-        content: msg.content
-      })
+    if (scene === 'HOME') {
+      // 小屋场景：注入时间标记，让艾莉丝有清晰的时间感
+      messages.push(...formatHistoryWithTime(recentHistory))
+    } else {
+      for (const msg of recentHistory) {
+        messages.push({
+          role: msg.isUser ? 'user' : 'assistant',
+          content: msg.content
+        })
+      }
     }
   }
 

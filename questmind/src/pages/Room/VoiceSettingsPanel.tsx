@@ -29,9 +29,9 @@ const STYLE_OPTIONS: Array<{
   label: string
   description: string
 }> = [
-  { id: 'gentle', label: '温柔', description: '轻柔、亲近、略慢' },
-  { id: 'confident', label: '自信', description: '从容、清晰、有主见' },
-  { id: 'lively', label: '灵动', description: '明快、轻盈、有活力' },
+  { id: 'reserved', label: '秘书', description: '专业、周到、有分寸' },
+  { id: 'gentle', label: '私下', description: '放轻、放慢、关切' },
+  { id: 'sharp', label: '执行', description: '干练、精准、利落' },
 ]
 
 function getSourceLabel(source: AliceVoiceSource, voiceId: string | null): string {

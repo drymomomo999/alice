@@ -12,6 +12,7 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "QuestMind",
         "width": 1280,
         "height": 800,
@@ -19,13 +20,27 @@
         "minHeight": 600,
         "resizable": true,
         "decorations": true,
-        "center": true
+        "center": true,
+        "visible": false
+      },
+      {
+        "label": "desktop-pet",
+        "title": "艾莉丝桌宠",
+        "url": "/#/desktop-pet",
+        "width": 300,
+        "height": 420,
+        "resizable": false,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "shadow": false
       }
     ],
     "security": {
       "csp": "default-src 'self'; script-src 'self' 'unsafe-eval' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://njecytkavzhrmlgzwwkm.supabase.co https://*.supabase.co; font-src 'self' data:; frame-src 'self' blob:; media-src 'self' blob:; connect-src 'self' https://*.supabase.co https://api.deepseek.com wss://*.supabase.co; worker-src 'self' blob:"
     },
-    "macOSPrivateApi": false
+    "macOSPrivateApi": true
   },
   "bundle": {
     "active": true,

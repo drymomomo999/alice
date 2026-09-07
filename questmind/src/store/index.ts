@@ -610,7 +610,7 @@ interface AIChatState {
   addMessage: (character: AICharacter, message: Omit<AIMessage, 'id' | 'timestamp'>) => void
   clearMessages: (character: AICharacter) => void
   clearAllMessages: () => void
-  saveToDb: (userId: string, character: AICharacter, content: string, isUser: boolean) => Promise<void>
+  saveToDb: (userId: string, character: AICharacter, content: string, isUser: boolean, scene?: AIMessage['scene'], goalId?: string) => Promise<void>
   // 记录本次访问时间
   markVisit: (character: AICharacter) => void
 }
@@ -674,8 +674,8 @@ export const useAIChatStore = create<AIChatState>()(
         }
       })),
 
-      saveToDb: async (userId, character, content, isUser) => {
-        await sync.saveAIMessageToDb(userId, character, content, isUser)
+      saveToDb: async (userId, character, content, isUser, scene, goalId) => {
+        await sync.saveAIMessageToDb(userId, character, content, isUser, scene, goalId)
       },
 
       markVisit: (character) => set((state) => ({

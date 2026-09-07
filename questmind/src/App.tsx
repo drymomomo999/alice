@@ -1,4 +1,4 @@
-import { HashRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
+import { HashRouter, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { AppLayout } from '@/components/layout/AppLayout'
 import { WelcomePage } from '@/pages/Welcome'
 import { LoginPage } from '@/pages/Login/LoginPage'
@@ -8,9 +8,25 @@ import { GoalsPage } from '@/pages/Goals'
 import { RoomPage } from '@/pages/Room'
 import { LectureRoomPage } from '@/pages/LectureRoom'
 import { ProfilePage } from '@/pages/Profile'
+import { DesktopPetPage } from '@/pages/DesktopPet'
 import { useUserStore, useGoalsStore } from '@/store'
 import { useEffect } from 'react'
+import { listen } from '@tauri-apps/api/event'
 import { onAuthStateChange, getCurrentUser } from '@/services/auth.service'
+import { hydrateRelationshipStoreFromCloud } from '@/services/aliceRelationshipCloud.service'
+import { setCourseEngineCurrentUser, syncCourseEngineOnLogin } from '@/course-engine/service'
+
+function DesktopPetNavigationBridge() {
+  const navigate = useNavigate()
+
+  useEffect(() => {
+    if (!('__TAURI_INTERNALS__' in window)) return
+    const unlisten = listen<string>('desktop-pet:navigate', event => navigate(event.payload))
+    return () => { void unlisten.then(dispose => dispose()) }
+  }, [navigate])
+
+  return null
+}
 
 // 受保护路由组件 - 检查是否需要 onboarding
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -41,7 +57,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
-function App() {
+function MainApplication() {
   const { isAuthenticated, isDemo, initializeUser, setAuthChecked } = useUserStore()
 
   // 监听 Supabase Auth 状态，实现持久登录
@@ -68,6 +84,17 @@ function App() {
           )
           // 登录后立即从 DB 加载 goals，覆盖 localStorage 中的旧缓存
           await useGoalsStore.getState().loadGoals(session.user.id)
+          // 登录后从云端拉取 Alice 关系数据，避免跨设备或 Goals/桌宠直接进时丢上下文
+          try {
+            await hydrateRelationshipStoreFromCloud(session.user.id)
+          } catch (error) {
+            console.error('Relationship hydrate on signed in failed:', error)
+          }
+          // 课程引擎：注入当前 user，让 analyze / recordMastery 自动云端备份
+          setCourseEngineCurrentUser(session.user.id)
+          void syncCourseEngineOnLogin(session.user.id).catch((error: unknown) => {
+            console.warn('[course-engine] login sync failed:', error)
+          })
         } catch (error) {
           console.error('User init failed:', error)
         }
@@ -100,6 +127,17 @@ function App() {
             )
             // 从 DB 重新加载 goals，覆盖可能残留的旧缓存
             await useGoalsStore.getState().loadGoals(user.id)
+            // 启动时也拉一次云端关系数据，确保刷新页面不丢上下文
+            try {
+              await hydrateRelationshipStoreFromCloud(user.id)
+            } catch (error) {
+              console.error('Relationship hydrate on refresh failed:', error)
+            }
+            // 课程引擎：注入 user + 拉取云端 snapshot
+            setCourseEngineCurrentUser(user.id)
+            void syncCourseEngineOnLogin(user.id).catch((error: unknown) => {
+              console.warn('[course-engine] refresh sync failed:', error)
+            })
           } catch (error) {
             console.error('Init user on refresh failed:', error)
           }
@@ -116,6 +154,7 @@ function App() {
 
   return (
     <HashRouter>
+      <DesktopPetNavigationBridge />
       <Routes>
         <Route path="/welcome" element={<WelcomePage />} />
         <Route path="/login" element={<LoginPage />} />
@@ -140,6 +179,22 @@ function App() {
       </Routes>
     </HashRouter>
   )
+}
+
+function App() {
+  // 桌宠是独立、常驻的轻量窗口：不重复订阅 Supabase Auth，也不触发云端数据加载。
+  // 它仅消费 Zustand 已持久化的用户与目标快照，避免两个 WebView 竞争同一个认证锁。
+  if (window.location.hash.startsWith('#/desktop-pet')) {
+    return (
+      <HashRouter>
+        <Routes>
+          <Route path="/desktop-pet" element={<DesktopPetPage />} />
+        </Routes>
+      </HashRouter>
+    )
+  }
+
+  return <MainApplication />
 }
 
 export default App

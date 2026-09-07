@@ -21,6 +21,12 @@ import { sendAIMessage } from '@/services/ai.service'
 import { MarkdownRenderer } from '@/components/MarkdownRenderer'
 import { useUserStore, useAIChatStore } from '@/store'
 import { formatLastVisit } from '@/services/alice.service'
+import {
+  buildAliceContext,
+  decideAliceAction,
+  serializeAliceRuntimeContext,
+  updateConversationState,
+} from '@/services/aliceDialogue.service'
 import { useAliceVoice } from '@/hooks/useAliceVoice'
 import { ProfilePanel } from './ProfilePanel'
 import { VoiceSettingsPanel } from './VoiceSettingsPanel'
@@ -41,6 +47,15 @@ import {
 } from '@/assets/alice'
 import AliceCharacter from '@/assets/alice-character.png'
 import type { AIMessage } from '@/types'
+import {
+  recordRelationshipResponse,
+  recordRelationshipUserMessage,
+  seedRelationshipFromLegacyProfile,
+} from '@/services/aliceRelationship.service'
+import {
+  hydrateRelationshipStoreFromCloud,
+  syncRelationshipStoreToCloud,
+} from '@/services/aliceRelationshipCloud.service'
 
 // 生成智能问候语（根据历史和上次来访时间）
 function buildGreeting(
@@ -55,9 +70,9 @@ function buildGreeting(
   // 久违回来
   if (lastVisitInfo && !lastVisitInfo.includes('今天')) {
     const variants = [
-      `${lastVisitInfo}没见，有点想你呢。最近还好吗？🌸`,
-      `你来啦，${lastVisitInfo}没来，我还以为你忘了这里。一切都好吗？`,
-      `${lastVisitInfo}了……终于来了。进来坐，我给你倒杯茶。☕`,
+      `${lastVisitInfo}没见。最近还好吗？🌸`,
+      `你来啦。最近过得怎么样？`,
+      `${lastVisitInfo}没见了，正好想听听你的近况。☕`,
     ]
     return variants[Math.floor(Math.random() * variants.length)]
   }
@@ -74,26 +89,27 @@ function buildGreeting(
 
   // 第一次 or 很久没来
   if (isLate) {
-    return `这么晚了还没睡。快进来，外面凉，坐一会儿吧。🌙`
+    return `这么晚了还没睡。我在呢，你那边冷吧？慢慢来，想说什么就说。🌙`
   }
   if (isMorning) {
     return `早呀，${userName}。阳光挺好的，今天开始得不错。`
   }
 
   const defaults = [
-    `你来啦。今天外面好热，我在屋里吹着空调，刚刚泡了杯茶。快进来坐吧。🌸`,
-    `嗯，来了。我刚好在这里。坐吧，最近过得怎么样？`,
-    `你来了。深圳今天风挺大的，进来暖和一下。有什么想聊的吗？`,
+    `你来啦。今天深圳好热，我在屋里开着空调，刚听了一首歌。最近过得怎么样？🌸`,
+    `嗯，来了。我刚好在这里。最近过得怎么样？`,
+    `你来了。深圳今天风挺大的，你那边冷不冷？有什么想聊的吗？`,
   ]
   return defaults[Math.floor(Math.random() * defaults.length)]
 }
 
 export function RoomPage() {
   const navigate = useNavigate()
-  const { user } = useUserStore()
+  const { user, isDemo } = useUserStore()
   const {
     messages: allMessages,
     addMessage,
+    saveToDb,
     clearMessages,
     markVisit,
     lastVisit,
@@ -101,7 +117,7 @@ export function RoomPage() {
 
   // 从 store 取 alice 的历史消息
   const persistedMessages = useMemo(
-    () => allMessages['alice'] || [],
+    () => (allMessages['alice'] || []).filter(message => message.scene === 'HOME'),
     [allMessages]
   )
 
@@ -113,6 +129,18 @@ export function RoomPage() {
   const [profile, setProfile] = useState<AliceProfile>(() => loadProfile())
   const [showProfilePanel, setShowProfilePanel] = useState(false)
   const [showVoiceSettings, setShowVoiceSettings] = useState(false)
+
+  useEffect(() => {
+    const userId = user?.id || 'demo'
+    if (user && !isDemo) {
+      void hydrateRelationshipStoreFromCloud(userId).then(() => {
+        const seeded = seedRelationshipFromLegacyProfile(userId, profile)
+        void syncRelationshipStoreToCloud(seeded)
+      })
+      return
+    }
+    seedRelationshipFromLegacyProfile(userId, profile)
+  }, [profile, user, isDemo])
 
   // 构建初始问候（只在组件挂载时确定一次）
   const initialGreeting = useMemo(() => {
@@ -224,10 +252,19 @@ export function RoomPage() {
       characterId: 'alice',
       content: userMessage,
       isUser: true,
+      scene: 'HOME',
     }
     addMessage('alice', userMsg)
+    if (user && !isDemo) saveToDb(user.id, 'alice', userMessage, true, 'HOME')
 
     try {
+      const relationshipStore = recordRelationshipUserMessage({
+        userId: user?.id || 'demo',
+        scene: 'HOME',
+        message: userMessage,
+      })
+      void syncRelationshipStoreToCloud(relationshipStore)
+
       // 构建发给 AI 的历史（用最新的 store 数据，不包含刚刚加进去的那条，手动附加）
       const currentHistory: AIMessage[] = [
         ...persistedMessages,
@@ -241,14 +278,29 @@ export function RoomPage() {
         lastVisitInfo || undefined
       )
 
+      const aliceContext = buildAliceContext({
+        scene: 'HOME',
+        user: { id: user?.id || 'demo', name: user?.nickname || '朋友' },
+        messages: currentHistory,
+      })
+      const dialogueDecision = decideAliceAction(userMessage, aliceContext)
+      updateConversationState(aliceContext, dialogueDecision, userMessage)
+
       const response = await sendAIMessage({
         characterId: 'alice',
         userId: user?.id || 'demo',
         userName: user?.nickname || '朋友',
-        scene: 'room',
+        scene: 'HOME',
         customSystemPrompt: systemPrompt,
         messageHistory: currentHistory,
+        runtimeContext: serializeAliceRuntimeContext(aliceContext, dialogueDecision),
       })
+      const relationshipAfterResponse = recordRelationshipResponse(
+        user?.id || 'demo',
+        aliceContext.relationship,
+        'HOME',
+      )
+      void syncRelationshipStoreToCloud(relationshipAfterResponse)
 
       // 推断表情
       const inferredExpression = inferExpressionFromReply(response)
@@ -259,11 +311,13 @@ export function RoomPage() {
         characterId: 'alice',
         content: response,
         isUser: false,
+        scene: 'HOME',
       })
+      if (user && !isDemo) saveToDb(user.id, 'alice', response, false, 'HOME')
 
       setActiveDialogText(response)
       setIsSpeaking(true)
-      speakAsAlice(response, inferredExpression)
+      speakAsAlice(response, inferredExpression, dialogueDecision.voiceState)
 
       // ── 后台：递增消息计数 + 自动分析用户偏好（完全隐藏，用户无感知）──
       const updatedProfile: AliceProfile = {
@@ -281,6 +335,7 @@ export function RoomPage() {
             characterId: 'alice',
             content: response,
             isUser: false,
+            scene: 'HOME',
           },
         ]
 
@@ -293,6 +348,7 @@ export function RoomPage() {
                 userInsight: result.userInsight,
                 preferenceTags: result.preferenceTags,
                 memoryNotes: result.memoryNotes,
+                memoryEntries: result.memoryEntries,
                 lastAnalyzedAt: new Date().toISOString(),
                 messagesSinceLastAnalysis: 0,
               }
@@ -317,6 +373,7 @@ export function RoomPage() {
         characterId: 'alice',
         content: errText,
         isUser: false,
+        scene: 'HOME',
       })
       setActiveDialogText(errText)
       setExpressionWithReset('sad')
@@ -325,7 +382,7 @@ export function RoomPage() {
     } finally {
       setIsLoading(false)
     }
-  }, [inputValue, isLoading, persistedMessages, user, profile, lastVisitInfo, addMessage, setExpressionWithReset, speakAsAlice])
+  }, [inputValue, isLoading, persistedMessages, user, isDemo, profile, lastVisitInfo, addMessage, saveToDb, setExpressionWithReset, speakAsAlice])
 
   // 清除对话历史
   const handleClearHistory = useCallback(() => {
@@ -610,6 +667,7 @@ export function RoomPage() {
         {showProfilePanel && (
           <ProfilePanel
             profile={profile}
+            userId={user?.id || 'demo'}
             onSave={(p) => {
               setProfile(p)
               saveProfile(p)

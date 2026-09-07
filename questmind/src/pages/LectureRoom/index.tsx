@@ -9,6 +9,7 @@ import {
   buildSourceDocuments,
   type LectureMode,
 } from '@/services/ai.service'
+import { getCourseModel, getStudyContext } from '@/course-engine/service'
 import { AlicePet, type PetMessage } from './AlicePet'
 import { PdfPageRenderer } from './PdfPageRenderer'
 
@@ -115,8 +116,24 @@ export function LectureRoomPage() {
   // 获取源文档
   const getLectureOptions = useCallback((mode: LectureMode, priorContent?: string | null) => {
     if (!goal) return null
-    const goalContext = buildGoalContextString(goal)
-    const sourceDocs = buildSourceDocuments(goal)
+    const studyMode = mode === 'overview' ? 'preview' : mode === 'keypoints' ? 'final_review' : 'systematic'
+    const structuredContext = getStudyContext(goal.id, studyMode)
+    const courseModel = getCourseModel(goal.id)
+    const goalContext = structuredContext
+      ? [goal.description, goal.context, `结构化学习上下文：${JSON.stringify(structuredContext)}`].filter(Boolean).join('\n\n')
+      : buildGoalContextString(goal)
+    const sourceDocs = courseModel
+      ? courseModel.documents.map(document => ({
+          name: document.name,
+          type: document.name.toLowerCase().endsWith('.pdf') ? 'pdf' as const : document.name.toLowerCase().endsWith('.docx') ? 'docx' as const : 'text' as const,
+          textSnippet: courseModel.evidence
+            .filter(evidence => evidence.documentId === document.id)
+            .sort((a, b) => b.strength - a.strength)
+            .slice(0, 12)
+            .map(evidence => `[P${evidence.pageOrSlide}] ${evidence.rawExcerpt}`)
+            .join('\n'),
+        }))
+      : buildSourceDocuments(goal)
     const focusedSubGoal = goal.subGoals?.find(sg => !sg.completed)
     return {
       goalTitle: goal.title,

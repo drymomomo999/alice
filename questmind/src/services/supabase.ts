@@ -598,16 +598,34 @@ export async function saveAIMessage(
   message: Omit<AIMessage, 'id' | 'timestamp'>
 ): Promise<AIMessage | null> {
   const client = getSupabase()
-  const { data, error } = await client
+  let { data, error } = await client
     .from('ai_messages')
     .insert({
       user_id: userId,
       character_id: message.characterId,
       content: message.content,
-      is_user: message.isUser
+      is_user: message.isUser,
+      scene: message.scene || null,
+      goal_id: message.goalId || null
     })
     .select()
     .single()
+
+  // 灰度发布兼容：前端先上线而迁移尚未执行时，仍可按旧结构保存消息。
+  if (error && /scene|goal_id|column/i.test(error.message || '')) {
+    const fallback = await client
+      .from('ai_messages')
+      .insert({
+        user_id: userId,
+        character_id: message.characterId,
+        content: message.content,
+        is_user: message.isUser,
+      })
+      .select()
+      .single()
+    data = fallback.data
+    error = fallback.error
+  }
   
   if (error) {
     console.error('Error saving AI message:', error)
@@ -886,7 +904,9 @@ function transformAIMessageFromDb(data: any): AIMessage {
     characterId: data.character_id,
     content: data.content,
     timestamp: data.created_at,
-    isUser: data.is_user
+    isUser: data.is_user,
+    scene: data.scene || undefined,
+    goalId: data.goal_id || undefined,
   }
 }
 

@@ -7,6 +7,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
+    "test:course-engine": "node scripts/run-course-engine-acceptance.mjs",
+    "test:relationship": "node scripts/run-relationship-acceptance.mjs",
     "preview": "vite preview",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",

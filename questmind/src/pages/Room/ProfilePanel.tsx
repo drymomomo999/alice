@@ -1,25 +1,38 @@
 import { useState, useRef, useCallback } from 'react'
 import { motion } from 'framer-motion'
-import { X, Save, RotateCcw, Download, Upload, BookOpen } from 'lucide-react'
+import { X, Save, RotateCcw, Download, Upload, BookOpen, Trash2, Brain } from 'lucide-react'
 import type { AliceProfile } from '@/services/aliceProfile.service'
 import {
   getDefaultProfile,
   exportProfileToFile,
   importProfileFromFile,
 } from '@/services/aliceProfile.service'
+import {
+  clearRelationshipMemories,
+  deleteRelationshipMemory,
+  getRelationshipStage,
+  loadRelationshipStore,
+  type RelationshipStore,
+} from '@/services/aliceRelationship.service'
+import {
+  clearRelationshipMemoriesFromCloud,
+  deleteRelationshipMemoryFromCloud,
+} from '@/services/aliceRelationshipCloud.service'
 
 interface ProfilePanelProps {
   profile: AliceProfile
+  userId: string
   onSave: (profile: AliceProfile) => void
   onClose: () => void
 }
 
-export function ProfilePanel({ profile, onSave, onClose }: ProfilePanelProps) {
+export function ProfilePanel({ profile, userId, onSave, onClose }: ProfilePanelProps) {
   const [personality, setPersonality] = useState(profile.personality)
   const [speakingStyle, setSpeakingStyle] = useState(profile.speakingStyle)
   const [savedFlash, setSavedFlash] = useState(false)
   const [importMsg, setImportMsg] = useState('')
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const [relationship, setRelationship] = useState<RelationshipStore>(() => loadRelationshipStore(userId))
 
   const hasChanges =
     personality !== profile.personality || speakingStyle !== profile.speakingStyle
@@ -74,6 +87,22 @@ export function ProfilePanel({ profile, onSave, onClose }: ProfilePanelProps) {
     [onSave]
   )
 
+  const removeMemory = useCallback((kind: 'preference' | 'moment' | 'followup', id: string) => {
+    setRelationship(deleteRelationshipMemory(userId, kind, id))
+    void deleteRelationshipMemoryFromCloud(userId, kind, id)
+  }, [userId])
+
+  const clearMemories = useCallback(() => {
+    setRelationship(clearRelationshipMemories(userId))
+    void clearRelationshipMemoriesFromCloud(userId)
+  }, [userId])
+
+  const memoryItems = [
+    ...relationship.preferences.filter(item => item.active).map(item => ({ kind: 'preference' as const, id: item.id, label: '交流偏好', text: item.value })),
+    ...relationship.moments.filter(item => item.active).map(item => ({ kind: 'moment' as const, id: item.id, label: '共同经历', text: item.summary })),
+    ...relationship.followups.filter(item => !item.dismissedAt && !item.askedAt).map(item => ({ kind: 'followup' as const, id: item.id, label: '待回访', text: item.summary })),
+  ]
+
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -100,6 +129,7 @@ export function ProfilePanel({ profile, onSave, onClose }: ProfilePanelProps) {
             <BookOpen className="w-4 h-4 text-pink-500" />
             <h3 className="text-sm font-bold text-pink-800">人物档案</h3>
           </div>
+
           <button
             onClick={onClose}
             className="p-1.5 rounded-lg hover:bg-pink-50 transition-colors"
@@ -114,6 +144,45 @@ export function ProfilePanel({ profile, onSave, onClose }: ProfilePanelProps) {
           <p className="text-xs text-pink-400/80 leading-relaxed">
             设定艾莉丝的性格基底和说话方式。随着你们对话增多，她会逐渐了解你，自然地变成你喜欢的样子。
           </p>
+
+          <div className="pt-3 border-t border-pink-100/70">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-1.5">
+                <Brain className="w-4 h-4 text-pink-500" />
+                <h4 className="text-xs font-semibold text-pink-700">艾莉丝记住的事</h4>
+                <span className="text-[10px] text-pink-400">熟悉阶段 {getRelationshipStage(userId)}</span>
+              </div>
+              {memoryItems.length > 0 && (
+                <button onClick={clearMemories} className="text-[10px] text-red-400 hover:text-red-500">
+                  全部清除
+                </button>
+              )}
+            </div>
+            <p className="text-[11px] text-pink-400/80 leading-relaxed mb-2">
+              这里只显示会影响后续交流的重要偏好、共同经历和一次性回访。你可以随时删除。
+            </p>
+            {memoryItems.length === 0 ? (
+              <p className="py-3 text-center text-xs text-pink-300">还没有形成关系记忆</p>
+            ) : (
+              <div className="space-y-2 max-h-44 overflow-y-auto pr-1">
+                {memoryItems.map(item => (
+                  <div key={`${item.kind}-${item.id}`} className="flex items-start gap-2 rounded-xl bg-white/60 border border-pink-100/70 px-3 py-2">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[10px] font-medium text-pink-500">{item.label}</p>
+                      <p className="text-xs text-pink-900/75 leading-relaxed break-words">{item.text}</p>
+                    </div>
+                    <button
+                      onClick={() => removeMemory(item.kind, item.id)}
+                      className="p-1 rounded-md text-pink-300 hover:text-red-400 hover:bg-red-50"
+                      aria-label={`删除${item.label}`}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
 
           {/* 性格基底 */}
           <div>

@@ -11,9 +11,9 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 
 const MINIMAX_API_URL = 'https://api.minimaxi.com/v1'
-const DEFAULT_VOICE_ID = 'questmind-alice-voice-v1'
+const DEFAULT_VOICE_ID = 'questmind-alice-voice-v4'
 const PREVIEW_TEXT =
-  '你来啦。今天就在这里坐一会儿吧，不必急着把所有事情都想明白。无论是学习上的困惑，还是心里悄悄打结的小事，都可以慢慢告诉我。我会认真听，也会陪你一起找到答案。'
+  '早上好。今天的安排我已经整理好了：十点前先处理最紧急的两项任务，其余事项我会按优先级提醒你。不过……你昨晚休息得太晚了。先喝口水，稍微缓一缓吧。别担心，剩下的交给我。'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -31,12 +31,14 @@ type AliceExpression =
   | 'proud'
   | 'sad'
 
-type VoiceStyle = 'gentle' | 'confident' | 'lively'
+type VoiceStyle = 'reserved' | 'gentle' | 'sharp'
+type VoiceState = 'NEUTRAL' | 'RELAXED' | 'HAPPY' | 'SERIOUS' | 'CONCERNED' | 'PLAYFUL' | 'FOCUSED' | 'SOFT'
 
 interface VoiceRequest {
   action: 'design' | 'synthesize'
   text?: string
   expression?: AliceExpression | null
+  voiceState?: VoiceState
   voiceId?: string | null
   speed?: number
   pitch?: number
@@ -86,18 +88,59 @@ function getEmotion(expression?: AliceExpression | null): string {
   return expression ? emotions[expression] || 'calm' : 'calm'
 }
 
+function applyVoiceState(speed: number, pitch: number, state: VoiceState = 'NEUTRAL') {
+  const modifiers: Record<VoiceState, { speed: number; pitch: number; volume: number }> = {
+    NEUTRAL: { speed: 1, pitch: 0, volume: 0.96 },
+    RELAXED: { speed: 0.97, pitch: 0, volume: 0.92 },
+    HAPPY: { speed: 1.04, pitch: 1, volume: 1 },
+    SERIOUS: { speed: 1, pitch: -1, volume: 0.98 },
+    CONCERNED: { speed: 0.93, pitch: -1, volume: 0.84 },
+    PLAYFUL: { speed: 1.05, pitch: 1, volume: 0.98 },
+    FOCUSED: { speed: 1.01, pitch: -1, volume: 0.96 },
+    SOFT: { speed: 0.9, pitch: -1, volume: 0.78 },
+  }
+  const modifier = modifiers[state] || modifiers.NEUTRAL
+  return { speed: speed * modifier.speed, pitch: pitch + modifier.pitch, volume: modifier.volume }
+}
+
+function getVoiceEmotion(body: VoiceRequest): string {
+  if (body.voiceState === 'HAPPY' || body.voiceState === 'PLAYFUL') return 'happy'
+  if (body.voiceState === 'CONCERNED') return 'sad'
+  if (body.voiceState === 'SERIOUS' || body.voiceState === 'FOCUSED') return 'fluent'
+  return getEmotion(body.expression)
+}
+
+function directPerformanceText(rawText: string, body: VoiceRequest): string {
+  let text = rawText
+    .replace(/<#\d+(?:\.\d+)?#>/g, '')
+    .replace(/\((?:laughs|chuckle|coughs|clear-throat|groans|breath|pant|inhale|exhale|gasps|sniffs|sighs|snorts|burps|lip-smacking|humming|hissing|emm|sneezes)\)/gi, '')
+    .replace(/(?:……|…|\.{3,})(?=.)/g, '<#0.42#>')
+    .replace(/。(?=.)/g, '。<#0.18#>')
+    .replace(/[？?](?=.)/g, (mark) => `${mark}<#0.24#>`)
+    .replace(/[！!](?=.)/g, (mark) => `${mark}<#0.14#>`)
+    .replace(/[；;](?=.)/g, (mark) => `${mark}<#0.2#>`)
+    .replace(/^嗯[,，]?/, '(emm)<#0.14#>')
+    .replace(/^唉[,，]?/, '(sighs)<#0.16#>')
+
+  const state = body.voiceState || 'NEUTRAL'
+  if (state === 'SOFT' || state === 'CONCERNED') text = `(breath)${text}`
+  if (state === 'PLAYFUL' && /(?:真是|当然|果然)/.test(text)) text = `(chuckle)${text}`
+  if (body.expression === 'surprised' && !text.startsWith('(gasps)')) text = `(gasps)${text}`
+  return text
+}
+
 function applyStyle(
   speed: number,
   pitch: number,
   style: VoiceStyle
 ): { speed: number; pitch: number } {
-  if (style === 'confident') {
-    return { speed: speed * 0.98, pitch: pitch - 1 }
+  if (style === 'reserved') {
+    return { speed, pitch: pitch - 1 }
   }
-  if (style === 'lively') {
-    return { speed: speed * 1.05, pitch: pitch + 1 }
+  if (style === 'sharp') {
+    return { speed: speed * 1.04, pitch: pitch - 1 }
   }
-  return { speed: speed * 0.96, pitch }
+  return { speed: speed * 0.92, pitch: pitch - 1 }
 }
 
 async function callMiniMax(
@@ -145,24 +188,25 @@ async function synthesize(
   body: VoiceRequest,
   voiceId: string
 ): Promise<string> {
-  const style = body.style === 'confident' || body.style === 'lively'
+  const style = body.style === 'reserved' || body.style === 'sharp'
     ? body.style
-    : 'gentle'
-  const adjusted = applyStyle(
+    : 'reserved'
+  const styled = applyStyle(
     clamp(typeof body.speed === 'number' ? body.speed : 0.95, 0.5, 2),
     clamp(Math.round(typeof body.pitch === 'number' ? body.pitch : 0), -12, 12),
     style
   )
+  const adjusted = applyVoiceState(styled.speed, styled.pitch, body.voiceState)
   const data = await callMiniMax('/t2a_v2', apiKey, {
     model: 'speech-2.8-hd',
-    text: body.text,
+    text: directPerformanceText(body.text || '', body),
     stream: false,
     voice_setting: {
       voice_id: voiceId,
       speed: clamp(adjusted.speed, 0.5, 2),
-      vol: 1,
+      vol: adjusted.volume,
       pitch: clamp(adjusted.pitch, -12, 12),
-      emotion: getEmotion(body.expression),
+      emotion: getVoiceEmotion(body),
     },
     audio_setting: {
       sample_rate: 32000,

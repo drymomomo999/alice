@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { cn } from '@/lib/utils'
 import { uploadGoalAttachment, isAcceptableFileType, getAttachmentType, formatFileSize } from '@/services/supabase'
 import { extractTextFromFile } from '@/lib/fileExtractor'
+import { classifyGoalAttachment } from '@/course-engine/service'
 import { generateId } from '@/lib/utils'
 import type { GoalAttachment } from '@/types'
 import type { GoalPlanResult } from '@/services/ai.service'
@@ -92,7 +93,7 @@ export function SmartCreateDialog({
         }
 
         const attType = getAttachmentType(file.type)
-        newAttachments.push({
+        newAttachments.push(classifyGoalAttachment({
           id: generateId(),
           name: file.name,
           type: attType,
@@ -102,7 +103,7 @@ export function SmartCreateDialog({
           url: url || undefined,
           extractedText,
           uploadedAt: new Date().toISOString(),
-        })
+        }, wizardState.goalTitle || '未归类课程'))
       }
 
       setWizardState(prev => ({ ...prev, attachments: newAttachments }))
@@ -307,7 +308,7 @@ export function SmartCreateDialog({
                 )}
                 <div className="space-y-2">
                   <p className="text-sm font-semibold">🎯 阶段性目标</p>
-                  {wizardState.planResult.subGoals.map((sg: any, idx: number) => (
+                  {wizardState.planResult.subGoals.map((sg, idx) => (
                     <div key={idx} className="p-3 rounded-xl border border-sakura-light/30 bg-white">
                       <div className="flex items-center gap-2">
                         <div className="w-6 h-6 rounded-full bg-gradient-to-r from-sakura-pink to-peach-orange flex items-center justify-center text-xs font-bold text-white">{idx + 1}</div>

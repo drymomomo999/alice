@@ -1,0 +1,53 @@
+name: Acceptance
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+  workflow_dispatch:
+
+# 课程引擎与关系系统的验收需要构建产物；并发过大时排队避免 OOM。
+concurrency:
+  group: acceptance-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  acceptance:
+    name: 课程引擎 + 关系系统验收
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      NODE_VERSION: '22'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci --prefer-offline --no-audit --progress=false
+
+      - name: Install acceptance scripts (deps already in main package.json)
+        run: echo "all deps already in devDependencies"
+
+      - name: Acceptance · 课程引擎
+        run: npm run test:course-engine
+
+      - name: Acceptance · 关系系统
+        run: npm run test:relationship
+
+      - name: Upload acceptance logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: acceptance-logs-${{ github.run_id }}
+          path: |
+            .course-engine-test-dist/**
+            .relationship-test-dist/**
+          if-no-files-found: ignore
+          retention-days: 7

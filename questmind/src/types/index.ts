@@ -1,3 +1,5 @@
+import type { DocumentClassification } from '@/course-engine/types'
+
 // User types
 export type TimePreference = 'early' | 'night' | 'flexible'
 export type GoalCategory = 'study' | 'fitness' | 'reading' | 'exam' | 'career' | 'language' | 'skill' | 'other'
@@ -43,6 +45,8 @@ export interface GoalAttachment {
   extractedText?: string             // 文档提取的文字（截断至3000字，图片为空）
   imageDescription?: string          // 用户输入的图片描述（文档为空）
   uploadedAt: string
+  /** 课程理解层推断。原文件仍是事实来源，分类允许用户修正。 */
+  courseClassification?: DocumentClassification
 }
 
 export interface Goal {
@@ -120,6 +124,61 @@ export interface AIMessage {
   content: string
   timestamp: string
   isUser: boolean
+  /** Alice 场景与目标归属；旧数据为空时仅作为全局历史保留，不自动注入目标会话。 */
+  scene?: AliceScene
+  goalId?: string
+}
+
+export type AliceScene = 'HOME' | 'GOAL'
+
+export type AliceSocialIntent =
+  | 'QUESTION' | 'REQUEST' | 'VENT' | 'SHARE' | 'SEEK_COMPANY'
+  | 'SEEK_VALIDATION' | 'THINKING_OUT_LOUD' | 'JOKE' | 'TEASE'
+  | 'CELEBRATE' | 'COMPLAIN' | 'CURIOSITY' | 'SILENCE_FILL'
+
+export type AliceResponseObjective =
+  | 'SOLVE' | 'UNDERSTAND' | 'ACCOMPANY' | 'EXPLORE'
+  | 'TEACH' | 'ADVANCE' | 'LIGHTEN' | 'WAIT'
+
+export type AliceResponseDepth = 'TINY' | 'SHORT' | 'NORMAL' | 'DEEP'
+
+export type AliceVoiceState =
+  | 'NEUTRAL' | 'RELAXED' | 'HAPPY' | 'SERIOUS'
+  | 'CONCERNED' | 'PLAYFUL' | 'FOCUSED' | 'SOFT'
+
+export type AliceDialogueAct =
+  | 'ACKNOWLEDGE' | 'EMPATHIZE' | 'ASK' | 'EXPLAIN' | 'CORRECT'
+  | 'CONFIRM' | 'ENCOURAGE' | 'CHALLENGE' | 'SUGGEST' | 'SUMMARIZE'
+  | 'TRANSITION' | 'EXECUTE' | 'REDIRECT' | 'CASUAL_CHAT'
+  | 'ACKNOWLEDGE_AND_REDIRECT'
+
+export type AliceLearningMode = 'EXPLAIN' | 'SOCRATIC' | 'QUIZ' | 'PRACTICE' | 'REVIEW'
+
+export interface AliceConversationState {
+  scene: AliceScene
+  goalId?: string
+  taskId?: string
+  currentTopic?: string
+  userIntent?: string
+  userEmotion?: string
+  conversationStage?: string
+  lastAliceAction?: string
+  lastUserFeedback?: string
+  pendingAction?: string
+  progress?: number
+  confusionPoint?: string
+  learningMode?: AliceLearningMode
+  socialIntent?: AliceSocialIntent
+  objective?: AliceResponseObjective
+  responseDepth?: AliceResponseDepth
+  voiceState?: AliceVoiceState
+  primaryFocus?: string
+  secondaryFocus?: string
+  unresolvedQuestion?: string
+  focusStartedAt?: string
+  attentionIntensity?: number
+  belief?: string
+  beliefConfidence?: number
 }
 
 // Quiz types

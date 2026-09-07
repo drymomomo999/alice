@@ -13,12 +13,14 @@ import {
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { useGoalsStore, useUserStore } from '@/store'
+import { useGoalsStore } from '@/store'
 import { formatDate, generateId, cn } from '@/lib/utils'
 import { uploadGoalAttachment, deleteGoalAttachment, formatFileSize, isAcceptableFileType, getAttachmentType } from '@/services/supabase'
 import { extractTextFromFile } from '@/lib/fileExtractor'
+import { classifyGoalAttachment } from '@/course-engine/service'
 import { generateChapterOutline, type ChapterOutline } from '@/services/ai.service'
 import { StudyGuideCard } from './StudyGuideCard'
+import { CourseLearningPanel } from './CourseLearningPanel'
 import { DailyTaskCard } from './DailyTaskCard'
 import { MarkdownRenderer } from '@/components/MarkdownRenderer'
 import { categoryConfig, priorityConfig } from './GoalListPanel'
@@ -85,7 +87,6 @@ export function GoalDetailPanel({
   onGenerateFinalExam,
 }: GoalDetailPanelProps) {
   const { updateGoal, startDailyTask, stopDailyTask, toggleDailyTask } = useGoalsStore()
-  const { user: _user } = useUserStore()
   const navigate = useNavigate()
   const [activeStudyTaskId, setActiveStudyTaskId] = useState<string | null>(null)
 
@@ -170,7 +171,7 @@ export function GoalDetailPanel({
           uploadedAt: new Date().toISOString(),
         }
 
-        newAttachments.push(attachment)
+        newAttachments.push(classifyGoalAttachment(attachment, selectedGoal.title))
       }
 
       if (newAttachments.length > (selectedGoal.attachments?.length || 0)) {
@@ -499,7 +500,7 @@ export function GoalDetailPanel({
                   const title = prompt('输入子目标名称')
                   if (title?.trim()) {
                     const newSubGoals = [...selectedGoal.subGoals, { id: generateId(), goalId: selectedGoal.id, title: title.trim(), completed: false }]
-                    updateGoal(selectedGoal.id, { subGoals: newSubGoals } as any)
+                    updateGoal(selectedGoal.id, { subGoals: newSubGoals })
                   }
                 }}>
                 <Plus className="w-3 h-3" />添加
@@ -530,7 +531,7 @@ export function GoalDetailPanel({
                   <button
                     onClick={() => {
                       const newSubGoals = selectedGoal.subGoals.filter(s => s.id !== sg.id)
-                      updateGoal(selectedGoal.id, { subGoals: newSubGoals } as any)
+                      updateGoal(selectedGoal.id, { subGoals: newSubGoals })
                     }}
                     className="p-1 rounded-lg opacity-0 group-hover:opacity-100 hover:bg-red-50 text-red-300 hover:text-red-400 transition-all"
                   >
@@ -553,6 +554,8 @@ export function GoalDetailPanel({
             生成最终测验
             <span className="text-[10px] font-normal text-muted-foreground ml-1">综合所有材料</span>
           </button>
+
+          <CourseLearningPanel key={selectedGoal.id} goal={selectedGoal} onUpdateGoal={updateGoal} />
 
           {/* ===== 章节大纲区块 ===== */}
           <div className="rounded-xl border border-lavender-light/30 bg-lavender-light/5 overflow-hidden">

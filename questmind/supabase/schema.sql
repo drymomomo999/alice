@@ -96,14 +96,17 @@ CREATE INDEX IF NOT EXISTS idx_daily_tasks_goal_id ON daily_tasks(goal_id);
 CREATE TABLE IF NOT EXISTS ai_messages (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    character_id TEXT NOT NULL CHECK (character_id IN ('xiaoSi', 'coach', 'friend', 'rem')),
+    character_id TEXT NOT NULL CHECK (character_id IN ('xiaoSi', 'coach', 'friend', 'rem', 'alice')),
     content TEXT NOT NULL,
     is_user BOOLEAN NOT NULL DEFAULT TRUE,
+    scene TEXT CHECK (scene IN ('HOME', 'GOAL')),
+    goal_id UUID REFERENCES goals(id) ON DELETE CASCADE,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_ai_messages_user_id ON ai_messages(user_id);
 CREATE INDEX IF NOT EXISTS idx_ai_messages_character ON ai_messages(user_id, character_id);
+CREATE INDEX IF NOT EXISTS idx_ai_messages_alice_scene ON ai_messages(user_id, character_id, scene, goal_id, created_at);
 
 -- =====================================================
 -- 5. 每日任务表 (quests)
