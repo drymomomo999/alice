@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { applyMasteryEvent, buildCourseModel, buildStudyContext, buildStudyMap } from '../src/course-engine/engine'
-import type { CourseDocumentInput } from '../src/course-engine/types'
+import { applyPlanPatch, createPlanPatch, recordLearningEvent, recordSubGoalCompletion, resolveCourse, rollbackLatestRevision, selectTodayTasks, validatePlanPatch } from '../src/course-engine/continuity'
+import type { CourseDocumentInput, PlanPatch } from '../src/course-engine/types'
 
 const documents: CourseDocumentInput[] = [
   {
@@ -66,8 +67,89 @@ const fixture3 = buildCourseModel({
 })
 assert.ok(fixture3.nodes.some(node => node.assessmentRelevance >= 0.9))
 
+// CCE MVP-1 ~ MVP-7：连续周次、稳定 ID、patch、进度、幂等、回滚与不确定归属。
+const week1Documents: CourseDocumentInput[] = [{
+  id: 'signals-w1', name: '信号与系统 Week 1.pdf', mimeType: 'application/pdf', uploadedAt: '2026-09-01T00:00:00.000Z',
+  text: 'Week 1 基础信号\n冲激函数\n重点：冲激函数\n---\n连续信号与离散信号\n---\n练习：完成信号变换',
+}]
+let continuity = buildCourseModel({
+  userId: 'user', goalId: 'signals-goal', courseName: '信号与系统', documents: week1Documents, now: '2026-09-01T00:00:00.000Z',
+  initialPlan: {
+    subGoals: [{ id: 'sg-week1', title: '基础信号', completed: false }],
+    tasks: [
+      { id: 'task-done', title: '学习连续与离散信号', completed: true, completedAt: '2026-09-01T01:00:00.000Z' },
+      { id: 'task-impulse', title: '复习冲激函数', completed: false },
+    ],
+  },
+})
+const initialCourseId = continuity.id
+const initialNode = continuity.nodes.find(node => node.canonicalName.includes('冲激函数'))
+assert.ok(initialNode)
+assert.equal(continuity.continuity.tasks.find(task => task.id === 'task-done')?.status, 'DONE')
+
+const week2Documents: CourseDocumentInput[] = [...week1Documents, {
+  id: 'signals-w2', name: '信号与系统 Week 2.pdf', mimeType: 'application/pdf', uploadedAt: '2026-09-08T00:00:00.000Z',
+  text: 'Week 2 系统性质\n冲激函数\n重点：冲激函数\n---\nLTI 系统\n---\n线性与时不变\n---\n作业：判断系统性质',
+}]
+continuity = buildCourseModel({ userId: 'user', goalId: 'signals-goal', courseName: '信号与系统', documents: week2Documents, previous: continuity, now: '2026-09-08T00:00:00.000Z' })
+assert.equal(continuity.id, initialCourseId, '连续周次必须沿用 course_id')
+assert.equal(continuity.goalId, 'signals-goal', '连续周次必须沿用 goal_id')
+assert.equal(continuity.continuity.tasks.find(task => task.id === 'task-done')?.status, 'DONE', '已完成历史不能重置')
+assert.ok(continuity.continuity.lastDelta?.addedNodes.length, 'Week 2 必须生成新增节点 delta')
+assert.ok(continuity.continuity.lastDelta?.strengthenedNodes.some(node => node.nodeId === initialNode?.id), '重复知识必须合并到同一 node_id 并增加 Evidence')
+assert.ok(continuity.continuity.revisions.some(item => item.triggerType === 'DOCUMENT_UPLOAD'))
+assert.ok(continuity.continuity.tasks.some(task => task.sourceRevisionId && task.nodeIds.some(id => continuity.continuity.lastDelta?.addedNodes.some(node => node.nodeId === id))))
+assert.ok(continuity.continuity.revisions.at(-1)?.patch.taskActions.some(action => ['UPDATE', 'ADD'].includes(action.action) && ['TEACHER_EMPHASIS', 'REINFORCED_CONTENT'].includes(action.reasonCode)), '老师强化重点必须提升任务或追加复习')
+
+const revisionCount = continuity.continuity.revisions.length
+const taskIds = continuity.continuity.tasks.map(task => task.id)
+const repeated = buildCourseModel({ userId: 'user', goalId: 'signals-goal', courseName: '信号与系统', documents: week2Documents, previous: continuity, now: '2026-09-08T02:00:00.000Z' })
+assert.equal(repeated.continuity.revisions.length, revisionCount, '重复上传不得生成重复 revision')
+assert.deepEqual(repeated.continuity.tasks.map(task => task.id), taskIds, '重复上传不得生成重复任务')
+
+const today = selectTodayTasks(repeated, 30, '2026-09-09T00:00:00.000Z')
+assert.ok(today.every(task => !['DONE', 'CANCELLED'].includes(task.status)), '今日任务不得重新放入完成或取消项')
+assert.ok(today.reduce((sum, task) => sum + task.estimatedMinutes, 0) <= 30 || today.length === 1, '今日任务受可用时间约束')
+
+const taskToFinish = repeated.continuity.tasks.find(task => task.status === 'READY')!
+const afterTask = recordLearningEvent(repeated, { taskId: taskToFinish.id, nodeIds: taskToFinish.nodeIds, eventType: 'TASK_DONE', createdAt: '2026-09-09T00:30:00.000Z' })
+assert.equal(afterTask.continuity.tasks.find(task => task.id === taskToFinish.id)?.status, 'DONE', '任务完成必须写回状态')
+assert.ok(afterTask.continuity.learningEvents.some(event => event.taskId === taskToFinish.id), '任务完成必须形成 LearningEvent')
+const activeSubGoal = afterTask.continuity.subGoals.find(item => item.status === 'ACTIVE')!
+const afterSubGoal = recordSubGoalCompletion(afterTask, activeSubGoal.id, true, '2026-09-09T00:45:00.000Z')
+assert.equal(afterSubGoal.continuity.subGoals.find(item => item.id === activeSubGoal.id)?.status, 'COMPLETED', '子目标完成后必须解锁下一阶段')
+assert.ok(afterSubGoal.continuity.currentSubGoalId !== activeSubGoal.id || afterSubGoal.continuity.goalProgress === 1)
+
+const uncertain = resolveCourse({ existingCourses: [repeated], documentName: '完全无法识别的材料.bin', documentText: '无关内容' })
+assert.notEqual(uncertain.decision, 'MATCHED', '低置信度课程归属不得静默合并')
+const explicit = resolveCourse({ existingCourses: [repeated], explicitCourseId: repeated.id, documentName: '老师临时命名.pdf' })
+assert.equal(explicit.decision, 'MATCHED', '用户明确绑定应优先归入现有课程')
+
+const latestDelta = repeated.continuity.lastDelta!
+const safePatch = createPlanPatch(repeated, latestDelta, '2026-09-09T01:00:00.000Z')
+assert.deepEqual(validatePlanPatch(repeated.continuity, safePatch), [])
+const invalidPatch: PlanPatch = {
+  ...safePatch, id: 'invalid-patch', subGoalActions: [],
+  taskActions: [{ action: 'CANCEL', taskId: 'missing-task', reasonCode: 'OUTLINE_CHANGED', reason: '大纲替换' }],
+}
+assert.ok(validatePlanPatch(repeated.continuity, invalidPatch).length, '修改/取消没有稳定 ID 必须被拒绝')
+
+const cancellable = repeated.continuity.tasks.find(task => task.status !== 'DONE')!
+const cancelPatch: PlanPatch = {
+  ...safePatch, id: 'outline-change-patch', triggerDocumentIds: ['outline-change'], subGoalActions: [],
+  taskActions: [{ action: 'CANCEL', taskId: cancellable.id, reasonCode: 'OUTLINE_CHANGED', reason: '老师已删除原章节' }],
+  userFacingSummary: '课程大纲发生变化，旧任务已取消但历史仍保留。', reviewRequired: false,
+}
+const cancelledState = applyPlanPatch(repeated.continuity, cancelPatch, '2026-09-09T02:00:00.000Z')
+assert.equal(cancelledState.tasks.find(task => task.id === cancellable.id)?.status, 'CANCELLED')
+assert.ok(cancelledState.revisions.some(item => item.patch.id === cancelPatch.id), '大纲变化必须保留 revision reason')
+const cancelledModel = { ...repeated, continuity: cancelledState }
+const rolledBack = rollbackLatestRevision(cancelledModel, '2026-09-09T03:00:00.000Z')
+assert.notEqual(rolledBack.continuity.tasks.find(task => task.id === cancellable.id)?.status, 'CANCELLED', '回滚必须恢复上一版本')
+assert.ok(rolledBack.continuity.revisions.find(item => item.patch.id === cancelPatch.id)?.revertedAt, '回滚不能删除 revision 历史')
+
 assert.deepEqual(Object.keys(model).sort(), [
-  'blocks','createdAt','documents','edges','evidence','goalId','id','mastery','masteryEvents','name','nodes','reviewQueue','teacherSignals','updatedAt','userId',
+  'blocks','continuity','createdAt','documents','edges','evidence','goalId','id','mastery','masteryEvents','name','nodes','reviewQueue','teacherSignals','updatedAt','userId',
 ].sort(), '课程模型 contract snapshot 发生变化时必须显式更新验收')
 
 console.log(`course-engine acceptance: ok (${model.nodes.length + fixture2.nodes.length + fixture3.nodes.length} nodes, 3 fixtures)`)

@@ -8,13 +8,11 @@ import { GoalsPage } from '@/pages/Goals'
 import { RoomPage } from '@/pages/Room'
 import { LectureRoomPage } from '@/pages/LectureRoom'
 import { ProfilePage } from '@/pages/Profile'
-import { DesktopPetPage } from '@/pages/DesktopPet'
-import { useUserStore, useGoalsStore } from '@/store'
+import { CoursewareStudyPage } from '@/pages/CoursewareStudy'
+import { useUserStore } from '@/store'
 import { useEffect } from 'react'
 import { listen } from '@tauri-apps/api/event'
-import { onAuthStateChange, getCurrentUser } from '@/services/auth.service'
-import { hydrateRelationshipStoreFromCloud } from '@/services/aliceRelationshipCloud.service'
-import { setCourseEngineCurrentUser, syncCourseEngineOnLogin } from '@/course-engine/service'
+import { startAuthRuntime } from '@/services/authRuntime'
 
 function DesktopPetNavigationBridge() {
   const navigate = useNavigate()
@@ -58,100 +56,7 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 }
 
 function MainApplication() {
-  const { isAuthenticated, isDemo, initializeUser, setAuthChecked } = useUserStore()
-
-  // 监听 Supabase Auth 状态，实现持久登录
-  useEffect(() => {
-    const { data: { subscription } } = onAuthStateChange(async (event, session) => {
-      if (event === 'SIGNED_IN' && session?.user && !isAuthenticated && !isDemo) {
-        // Supabase 已登录 → 立即标记认证成功，防止闪退
-        useUserStore.setState({
-          isAuthenticated: true,
-          isDemo: false,
-          user: {
-            id: session.user.id,
-            email: session.user.email || '',
-            nickname: session.user.user_metadata?.nickname || session.user.email || '',
-            createdAt: new Date().toISOString()
-          }
-        })
-        // 异步初始化用户数据（新用户自动创建 DB 记录，老用户直接加载）
-        try {
-          await initializeUser(
-            session.user.id,
-            session.user.email || '',
-            session.user.user_metadata?.nickname || session.user.email || '探索者'
-          )
-          // 登录后立即从 DB 加载 goals，覆盖 localStorage 中的旧缓存
-          await useGoalsStore.getState().loadGoals(session.user.id)
-          // 登录后从云端拉取 Alice 关系数据，避免跨设备或 Goals/桌宠直接进时丢上下文
-          try {
-            await hydrateRelationshipStoreFromCloud(session.user.id)
-          } catch (error) {
-            console.error('Relationship hydrate on signed in failed:', error)
-          }
-          // 课程引擎：注入当前 user，让 analyze / recordMastery 自动云端备份
-          setCourseEngineCurrentUser(session.user.id)
-          void syncCourseEngineOnLogin(session.user.id).catch((error: unknown) => {
-            console.warn('[course-engine] login sync failed:', error)
-          })
-        } catch (error) {
-          console.error('User init failed:', error)
-        }
-      }
-      if (event === 'SIGNED_OUT') {
-        // Supabase 已登出（其他标签页触发的），清空所有数据
-        useGoalsStore.getState().setGoals([])
-        useGoalsStore.setState({ currentGoal: null })
-        setAuthChecked(true)
-      }
-    })
-
-    return () => subscription.unsubscribe()
-  }, [isAuthenticated, isDemo, initializeUser, setAuthChecked])
-
-  // 启动时必须验证 Supabase 会话有效性
-  useEffect(() => {
-    const checkAuth = async () => {
-      if (isAuthenticated && !isDemo) {
-        // Zustand 恢复了 isAuthenticated=true，但需要向 Supabase 验证会话是否仍然有效
-        const { user } = await getCurrentUser()
-        if (user) {
-          // Supabase 会话有效，初始化/加载用户数据（自动处理新用户创建）
-          try {
-            const storeUser = useUserStore.getState().user
-            await initializeUser(
-              user.id,
-              storeUser?.email || user.email || '',
-              storeUser?.nickname || user.user_metadata?.nickname || '探索者'
-            )
-            // 从 DB 重新加载 goals，覆盖可能残留的旧缓存
-            await useGoalsStore.getState().loadGoals(user.id)
-            // 启动时也拉一次云端关系数据，确保刷新页面不丢上下文
-            try {
-              await hydrateRelationshipStoreFromCloud(user.id)
-            } catch (error) {
-              console.error('Relationship hydrate on refresh failed:', error)
-            }
-            // 课程引擎：注入 user + 拉取云端 snapshot
-            setCourseEngineCurrentUser(user.id)
-            void syncCourseEngineOnLogin(user.id).catch((error: unknown) => {
-              console.warn('[course-engine] refresh sync failed:', error)
-            })
-          } catch (error) {
-            console.error('Init user on refresh failed:', error)
-          }
-        } else {
-          // Supabase 会话已失效（过期/被撤销），清除本地状态
-          useUserStore.getState().clearAuth()
-        }
-      }
-      // 标记认证检查完成
-      setAuthChecked(true)
-    }
-    checkAuth()
-  }, []) // 只在挂载时执行一次
-
+  useEffect(() => startAuthRuntime(), [])
   return (
     <HashRouter>
       <DesktopPetNavigationBridge />
@@ -169,6 +74,7 @@ function MainApplication() {
               <Routes>
                 <Route path="/" element={<HomePage />} />
                 <Route path="/goals" element={<GoalsPage />} />
+                <Route path="/courseware" element={<CoursewareStudyPage />} />
                 <Route path="/goals/lecture/:goalId" element={<LectureRoomPage />} />
                 <Route path="/room" element={<RoomPage />} />
                 <Route path="/profile" element={<ProfilePage />} />
@@ -182,18 +88,6 @@ function MainApplication() {
 }
 
 function App() {
-  // 桌宠是独立、常驻的轻量窗口：不重复订阅 Supabase Auth，也不触发云端数据加载。
-  // 它仅消费 Zustand 已持久化的用户与目标快照，避免两个 WebView 竞争同一个认证锁。
-  if (window.location.hash.startsWith('#/desktop-pet')) {
-    return (
-      <HashRouter>
-        <Routes>
-          <Route path="/desktop-pet" element={<DesktopPetPage />} />
-        </Routes>
-      </HashRouter>
-    )
-  }
-
   return <MainApplication />
 }
 

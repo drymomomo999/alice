@@ -1,13 +1,15 @@
 @echo off
 :: ============================================
 :: QuestMind 静默启动器
-:: 双击直接打开 App，命令行窗口一闪即逝
+:: 只启动已经编译好的 GUI，不再启动 Vite / Cargo 开发环境
 :: ============================================
 
-:: 切到项目目录
-cd /d "d:\text1\questmind"
+set "QUESTMIND_EXE=%~dp0src-tauri\target\release\questmind.exe"
 
-:: 启动 tauri:dev（开新窗口最小化，避免阻塞）
-start "QuestMind" /MIN cmd /c "npm run tauri:dev"
+if not exist "%QUESTMIND_EXE%" (
+    msg * "QuestMind 正式程序尚未构建，请先运行 build-app.bat。"
+    exit /b 1
+)
 
-exit
+start "" "%QUESTMIND_EXE%"
+exit /b 0

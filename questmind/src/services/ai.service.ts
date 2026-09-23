@@ -10,6 +10,7 @@
  */
 
 import type { AICharacter, AIMessage, AliceScene, Goal, GoalCategory } from '@/types'
+import { normalizeGoalPlan } from '@/features/goals/planning'
 import { generateId } from '@/lib/utils'
 import { getSupabase } from './supabase'
 import { REM_CONFIG, getRemSystemPrompt } from './rem.service'
@@ -56,7 +57,7 @@ function stripMarkdownCodeBlock(text: string): string {
  */
 function safeJSONParse(text: string): unknown {
   // ---- 预处理：去除 markdown 代码块 ----
-  let sanitized = stripMarkdownCodeBlock(text).trim()
+  const sanitized = stripMarkdownCodeBlock(text).trim()
 
   // ---- Strategy 1：只修复控制字符后直接解析 ----
   try {
@@ -172,7 +173,7 @@ function bruteForceJSONFix(text: string): string | null {
   try {
     // 尝试用 JSON5 风格的宽容解析
     // 先修复最常见的无引号 key
-    let fixed = text
+    const fixed = text
       .replace(/([{,]\s*|\n\s*)([a-zA-Z_$][\w$]*)\s*:/g, '$1"$2":')
       .replace(/,(\s*[}\]])/g, '$1')
       .replace(/:\s*undefined/g, ': null')
@@ -321,7 +322,7 @@ function buildSystemPrompt(
  * 开发环境下通过相对路径 /functions/v1/ai-chat 发起请求，
  * 由 Vite proxy 转发到 Supabase，避免浏览器 CORS 拦截。
  */
-async function callViaEdgeFunction(messages: ChatCompletionMessage[], maxTokens = 8192): Promise<string | null> {
+async function callViaEdgeFunction(messages: ChatCompletionMessage[], maxTokens = 8192, temperature = 0.8): Promise<string | null> {
   try {
     const isDev = import.meta.env.DEV
     console.log(`[AI] callViaEdgeFunction: isDev=${isDev}, maxTokens=${maxTokens}`)
@@ -338,7 +339,7 @@ async function callViaEdgeFunction(messages: ChatCompletionMessage[], maxTokens 
           'Authorization': `Bearer ${anonKey}`,
           'x-client-info': 'questmind-dev',
         },
-        body: JSON.stringify({ messages, max_tokens: maxTokens, temperature: 0.8 })
+        body: JSON.stringify({ messages, max_tokens: maxTokens, temperature })
       })
 
       if (!response.ok) {
@@ -356,7 +357,7 @@ async function callViaEdgeFunction(messages: ChatCompletionMessage[], maxTokens 
     // 生产环境：直接使用 Supabase SDK
     const supabase = getSupabase()
     const { data, error } = await supabase.functions.invoke('ai-chat', {
-      body: { messages, max_tokens: maxTokens, temperature: 0.8 }
+      body: { messages, max_tokens: maxTokens, temperature }
     })
 
     if (error) {
@@ -376,7 +377,7 @@ async function callViaEdgeFunction(messages: ChatCompletionMessage[], maxTokens 
 /**
  * 直连 DeepSeek API（开发模式备用）
  */
-async function callDirectDeepSeek(messages: ChatCompletionMessage[], maxTokens = 8192): Promise<string | null> {
+async function callDirectDeepSeek(messages: ChatCompletionMessage[], maxTokens = 8192, temperature = 0.8): Promise<string | null> {
   // 生产环境：API Key 不应打包进 bundle，统一走 Edge Function
   if (!import.meta.env.DEV) {
     console.log('[AI] 生产环境，跳过直连 DeepSeek（安全策略），统一走 Edge Function')
@@ -411,7 +412,7 @@ async function callDirectDeepSeek(messages: ChatCompletionMessage[], maxTokens =
         model: 'deepseek-chat',
         messages,
         max_tokens: maxTokens,
-        temperature: 0.8
+        temperature
       })
     })
 
@@ -432,36 +433,11 @@ async function callDirectDeepSeek(messages: ChatCompletionMessage[], maxTokens =
   }
 }
 
-const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六']
+// 清理旧回复中可能残留的模型内部时间标记，避免它们继续进入上下文并被复述。
+const LEADING_DIALOGUE_TIME = /^(?:\s*\[(?:(?:[01]?\d|2[0-3]):[0-5]\d|\d{1,2}月\d{1,2}日\s+周[一二三四五六日])\]\s*)+/
 
-/**
- * 给历史消息注入时间标记（仅小屋场景使用）
- * - 跨日时在当天第一条消息前加日期标记，如 [8月4日 周二]
- * - 每条消息前加 HH:MM，如 [14:30]
- * 让艾莉丝能区分"昨天发的"和"今天发的"，不再把时间搅在一起
- */
-function formatHistoryWithTime(history: AIMessage[]): ChatCompletionMessage[] {
-  let lastDateKey = ''
-  const result: ChatCompletionMessage[] = []
-  for (const msg of history) {
-    const ts = msg.timestamp ? new Date(msg.timestamp) : null
-    let prefix = ''
-    if (ts && !isNaN(ts.getTime())) {
-      const dateKey = `${ts.getFullYear()}-${ts.getMonth()}-${ts.getDate()}`
-      if (dateKey !== lastDateKey) {
-        prefix = `[${ts.getMonth() + 1}月${ts.getDate()}日 周${WEEKDAYS[ts.getDay()]}] `
-        lastDateKey = dateKey
-      }
-      const hh = String(ts.getHours()).padStart(2, '0')
-      const mm = String(ts.getMinutes()).padStart(2, '0')
-      prefix += `[${hh}:${mm}] `
-    }
-    result.push({
-      role: msg.isUser ? 'user' : 'assistant',
-      content: prefix + msg.content
-    })
-  }
-  return result
+export function stripDialogueTimePrefix(content: string): string {
+  return content.replace(LEADING_DIALOGUE_TIME, '').trimStart()
 }
 
 /**
@@ -473,6 +449,9 @@ export async function sendAIMessage(options: SendMessageOptions): Promise<string
   let systemContent = customSystemPrompt
     ?? buildSystemPrompt(characterId, userName, currentGoals, selectedGoalContext, scene, memorySummary, lastVisitInfo)
   if (runtimeContext) systemContent += `\n\n${runtimeContext}`
+  if (scene === 'HOME') {
+    systemContent += '\n\n时间信息仅供内部判断语境。回复正文前不要输出 [HH:MM] 等时间戳，也不要复述内部时间元数据。'
+  }
 
   const messages: ChatCompletionMessage[] = [
     { role: 'system', content: systemContent }
@@ -482,16 +461,11 @@ export async function sendAIMessage(options: SendMessageOptions): Promise<string
   if (messageHistory && messageHistory.length > 0) {
     const limit = scene === 'HOME' ? 30 : 20
     const recentHistory = messageHistory.slice(-limit)
-    if (scene === 'HOME') {
-      // 小屋场景：注入时间标记，让艾莉丝有清晰的时间感
-      messages.push(...formatHistoryWithTime(recentHistory))
-    } else {
-      for (const msg of recentHistory) {
-        messages.push({
-          role: msg.isUser ? 'user' : 'assistant',
-          content: msg.content
-        })
-      }
+    for (const msg of recentHistory) {
+      messages.push({
+        role: msg.isUser ? 'user' : 'assistant',
+        content: scene === 'HOME' ? stripDialogueTimePrefix(msg.content) : msg.content
+      })
     }
   }
 
@@ -505,7 +479,7 @@ export async function sendAIMessage(options: SendMessageOptions): Promise<string
     throw new Error('AI 服务不可用：直连 DeepSeek 和 Edge Function 均失败。请检查 API Key 配置和网络连接。')
   }
 
-  return result
+  return scene === 'HOME' ? stripDialogueTimePrefix(result) : result
 }
 
 /**
@@ -708,10 +682,10 @@ ${categoryExamples}
   ]
 
   // 依次尝试调用
-  let result = await callViaEdgeFunction(messages, 8192)
+  let result = await callViaEdgeFunction(messages, 8192, 0.35)
   if (!result) {
     console.warn('[AI] Edge Function 返回空，尝试直连 DeepSeek...')
-    result = await callDirectDeepSeek(messages, 8192)
+    result = await callDirectDeepSeek(messages, 8192, 0.35)
     if (!result) {
       throw new Error('AI 服务不可用：无法生成状态问题。请检查 API Key 配置和网络连接。')
     }
@@ -953,21 +927,21 @@ ${contextSection}${attachmentSection}${extractedSection}
         ]
       : messages
 
-    let result = await callViaEdgeFunction(msgs, maxTokens)
+    let result = await callViaEdgeFunction(msgs, maxTokens, 0.3)
     if (!result) {
       console.warn('[AI] Edge Function 返回空，尝试直连 DeepSeek...')
-      result = await callDirectDeepSeek(msgs, maxTokens)
+      result = await callDirectDeepSeek(msgs, maxTokens, 0.3)
       if (!result) {
         throw new Error('AI 服务不可用：无法生成学习计划。请检查 API Key 配置和网络连接。')
       }
     }
 
-    return safeJSONParse(result) as GoalPlanResult
+    return normalizeGoalPlan(safeJSONParse(result) as GoalPlanResult)
   }
 
   try {
     return await tryCall(8192)
-  } catch (firstErr) {
+  } catch (_firstErr) {
     console.warn('[generateGoalPlan] 第一次调用 JSON 解析失败，正在重试（增强格式约束 + 更大 token 配额）...')
     try {
       return await tryCall(8192, '\n\n⚠️ 你的上一次回复因为 JSON 格式错误或内容被截断而失败。请在本次回复中：\n1. 严格确保 JSON 完整闭合，所有花括号和方括号配对\n2. 所有属性名必须用双引号包裹\n3. 字符串值内的双引号用 \\" 转义\n4. 不要输出 JSON 之外的任何文字\n5. 如果内容过长，优先精简 dailyTasks 数组中的 description 字段，但保留完整的 JSON 结构')

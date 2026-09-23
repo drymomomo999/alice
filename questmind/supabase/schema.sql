@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS goals (
     current_status TEXT,  -- 用户当前状态描述（AI 增强）
     status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'completed', 'paused', 'abandoned')),
     priority TEXT NOT NULL DEFAULT 'medium' CHECK (priority IN ('low', 'medium', 'high')),
+    category TEXT CHECK (category IN ('study', 'fitness', 'reading', 'exam', 'career', 'language', 'skill', 'other')),
     start_date DATE,
     end_date DATE,
     progress INTEGER DEFAULT 0 CHECK (progress >= 0 AND progress <= 100),
@@ -66,6 +67,8 @@ CREATE TABLE IF NOT EXISTS sub_goals (
     title TEXT NOT NULL,
     completed BOOLEAN DEFAULT FALSE,
     completed_at TIMESTAMPTZ,
+    description TEXT,
+    day_range TEXT,
     order_index INTEGER DEFAULT 0,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -84,6 +87,11 @@ CREATE TABLE IF NOT EXISTS daily_tasks (
     frequency TEXT DEFAULT 'daily' CHECK (frequency IN ('daily', 'custom')),
     completed BOOLEAN DEFAULT FALSE,
     completed_at TIMESTAMPTZ,
+    day_index INTEGER,
+    sub_goal_index INTEGER,
+    difficulty_level TEXT CHECK (difficulty_level IN ('easy', 'medium', 'hard')),
+    resource_reference TEXT,
+    checklist JSONB DEFAULT '[]',
     order_index INTEGER DEFAULT 0,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );

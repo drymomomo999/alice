@@ -30,6 +30,7 @@ export const zh = {
   nav: {
     home: '首页',
     goals: '目标',
+    courseware: '精学',
     room: '小屋',
     profile: '我的',
     settings: '设置',

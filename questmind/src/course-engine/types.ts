@@ -37,6 +37,13 @@ export type ImportanceLevel = 'S' | 'A' | 'B' | 'C' | 'D'
 export type StudyMode = 'preview' | 'systematic' | 'final_review' | 'exam_cram' | 'deep_understanding'
 export type MasteryEventType = 'self_known' | 'correct' | 'correct_with_hint' | 'concept_correct' | 'wrong' | 'review_complete'
 
+export type GoalLifecycleStatus = 'ACTIVE' | 'PAUSED' | 'COMPLETED' | 'ARCHIVED'
+export type SubGoalLifecycleStatus = 'LOCKED' | 'UPCOMING' | 'ACTIVE' | 'REVIEW' | 'COMPLETED' | 'SUPERSEDED'
+export type ContinuityTaskStatus = 'PENDING' | 'READY' | 'IN_PROGRESS' | 'DONE' | 'SKIPPED' | 'CANCELLED' | 'OVERDUE'
+export type PlanAction = 'KEEP' | 'ADD' | 'UPDATE' | 'REORDER' | 'RESCHEDULE' | 'CANCEL' | 'REOPEN' | 'SUPERSEDE'
+export type PlanRevisionTrigger = 'INITIALIZE' | 'DOCUMENT_UPLOAD' | 'LEARNING_EVENT' | 'ROLLBACK' | 'FULL_REPLAN'
+export type GenerationReason = 'NEW_CONTENT' | 'REVIEW' | 'PREREQUISITE' | 'ERROR_RECOVERY' | 'DEADLINE_CATCHUP'
+
 export interface DocumentClassification {
   documentType: CourseDocumentType
   courseName: string
@@ -63,6 +70,13 @@ export interface CourseDocument extends CourseDocumentInput {
   processingStatus: CourseProcessingStatus
   processingErrorCode?: string
   processedAt?: string
+}
+
+export interface CourseMatchResult {
+  courseId?: string
+  score: number
+  decision: 'MATCHED' | 'REVIEW_REQUIRED' | 'NEW_COURSE_CANDIDATE'
+  reasons: string[]
 }
 
 export interface PedagogicalBlock {
@@ -180,6 +194,146 @@ export interface ReviewItem {
   completedAt?: string
 }
 
+export interface CourseDeltaNode {
+  nodeId: string
+  name: string
+  evidenceIds: string[]
+  reasonCode: 'NEW_NODE' | 'NEW_EVIDENCE' | 'CORRECTION' | 'PREREQUISITE_GAP' | 'ASSIGNMENT_DETECTED' | 'TEACHER_EMPHASIS'
+}
+
+export interface CourseDelta {
+  courseId: string
+  documentIds: string[]
+  stageBefore: string
+  stageAfter: string
+  addedNodes: CourseDeltaNode[]
+  strengthenedNodes: CourseDeltaNode[]
+  correctedNodes: CourseDeltaNode[]
+  newlyRequiredPrerequisites: CourseDeltaNode[]
+  newlyDetectedAssignments: CourseDeltaNode[]
+  teacherEmphasisChanges: CourseDeltaNode[]
+  suggestedNextStage: string
+  confidence: number
+  createdAt: string
+}
+
+export interface ContinuitySubGoal {
+  id: string
+  goalId: string
+  canonicalTitle: string
+  nodeIds: string[]
+  orderIndex: number
+  status: SubGoalLifecycleStatus
+  progress: number
+  sourceVersion: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ContinuityTask {
+  id: string
+  goalId: string
+  subGoalId?: string
+  nodeIds: string[]
+  title: string
+  description: string
+  type: 'LEARN' | 'PRACTICE' | 'REVIEW' | 'ASSESS'
+  status: ContinuityTaskStatus
+  dueAt?: string
+  priority: number
+  estimatedMinutes: number
+  generationReason: GenerationReason
+  sourceRevisionId: string
+  supersedesTaskId?: string
+  completionSignal?: string
+  unlockCondition?: string
+  createdAt: string
+  updatedAt: string
+  completedAt?: string
+}
+
+export interface PlanSubGoalAction {
+  action: PlanAction
+  subGoalId?: string
+  payload?: Partial<ContinuitySubGoal> & { canonicalTitle?: string }
+  reasonCode: string
+  reason: string
+}
+
+export interface PlanTaskAction {
+  action: PlanAction
+  taskId?: string
+  payload?: Partial<ContinuityTask> & { title?: string }
+  reasonCode: string
+  reason: string
+}
+
+export interface PlanPatch {
+  id: string
+  courseId: string
+  goalId: string
+  triggerDocumentIds: string[]
+  revisionReason: string
+  subGoalActions: PlanSubGoalAction[]
+  taskActions: PlanTaskAction[]
+  progressPatch: { currentStage?: string; currentSubGoalId?: string; goalProgress?: number }
+  userFacingSummary: string
+  confidence: number
+  reviewRequired: boolean
+  plannerVersion: string
+  createdAt: string
+}
+
+export interface PlanSnapshot {
+  currentStage: string
+  currentSubGoalId?: string
+  goalProgress: number
+  subGoals: ContinuitySubGoal[]
+  tasks: ContinuityTask[]
+}
+
+export interface PlanRevision {
+  id: string
+  goalId: string
+  triggerType: PlanRevisionTrigger
+  triggerId: string
+  patch: PlanPatch
+  summary: string
+  plannerVersion: string
+  createdAt: string
+  beforeState: PlanSnapshot
+  revertedAt?: string
+}
+
+export interface LearningEvent {
+  id: string
+  userId: string
+  courseId: string
+  goalId: string
+  taskId?: string
+  nodeIds: string[]
+  eventType: 'TASK_DONE' | 'QUIZ_RESULT' | 'USER_CONFUSION' | 'ERROR_RECORDED' | 'REVIEW_DONE'
+  score?: number
+  confidence?: number
+  payload?: Record<string, unknown>
+  createdAt: string
+}
+
+export interface CourseContinuityState {
+  goalStatus: GoalLifecycleStatus
+  currentStage: string
+  currentSubGoalId?: string
+  goalProgress: number
+  subGoals: ContinuitySubGoal[]
+  tasks: ContinuityTask[]
+  revisions: PlanRevision[]
+  learningEvents: LearningEvent[]
+  processedDocumentKeys: string[]
+  plannerVersion: string
+  lastDelta?: CourseDelta
+  lastSummary?: string
+}
+
 export interface StudyMapItem {
   nodeId: string
   name: string
@@ -218,6 +372,7 @@ export interface CourseModel {
   mastery: Record<string, UserKnowledgeState>
   masteryEvents: MasteryEvent[]
   reviewQueue: ReviewItem[]
+  continuity: CourseContinuityState
 }
 
 export interface StudyContext {

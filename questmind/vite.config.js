@@ -12,7 +12,7 @@ export default defineConfig({
     plugins: [react()],
     resolve: {
         alias: {
-            "@": path.resolve(__dirname, "./src"),
+            "@": path.resolve(import.meta.dirname, "./src"),
         },
     },
     // Tauri 要求 5173 固定端口，且不需要 host:true（用 localhost 即可）

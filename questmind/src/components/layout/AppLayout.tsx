@@ -9,12 +9,14 @@ import {
   Menu,
   X,
   Languages,
+  BookOpenCheck,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useUserStore } from '@/store'
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar'
 import LogoImg from '@/assets/logo.png'
 import { useI18nStore, useT } from '@/i18n'
+import { AliceDailyShare } from '@/components/AliceDailyShare'
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
   const location = useLocation()
@@ -27,6 +29,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   const navItems = [
     { path: '/', icon: Home, label: t('nav.home'), emoji: '🏠' },
     { path: '/goals', icon: Target, label: t('nav.goals'), emoji: '🎯' },
+    { path: '/courseware', icon: BookOpenCheck, label: t('nav.courseware'), emoji: '📚' },
     { path: '/room', icon: Sparkles, label: t('nav.room'), emoji: '✨' },
     { path: '/profile', icon: User, label: t('nav.profile'), emoji: '👤' },
   ]
@@ -39,6 +42,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen bg-sakura-base text-foreground relative overflow-hidden">
+      <AliceDailyShare />
       {/* === Sakura Background Decoration === */}
       <div className="absolute inset-0 pointer-events-none overflow-hidden">
         <div className="absolute top-[-10%] left-[-5%] w-[500px] h-[500px] rounded-full bg-sakura-pale/60 blur-[100px]" />

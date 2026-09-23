@@ -51,11 +51,12 @@ const IDLE_LINES = [
 function greeting(name?: string) {
   const hour = new Date().getHours()
   const suffix = name ? `，${name}` : ''
-  if (hour < 6) return `还没休息吗${suffix}？`
-  if (hour < 11) return `早上好${suffix}。`
-  if (hour < 14) return `中午好${suffix}。`
-  if (hour < 19) return `下午好${suffix}。`
-  return `晚上好${suffix}。`
+  const actionHint = '单击我可以打开 QuestMind。'
+  if (hour < 6) return `还没休息吗${suffix}？${actionHint}`
+  if (hour < 11) return `早上好${suffix}。${actionHint}`
+  if (hour < 14) return `中午好${suffix}。${actionHint}`
+  if (hour < 19) return `下午好${suffix}。${actionHint}`
+  return `晚上好${suffix}。${actionHint}`
 }
 
 export function DesktopPetPage() {

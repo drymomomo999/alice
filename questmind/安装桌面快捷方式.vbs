@@ -8,10 +8,10 @@ Set FSO = CreateObject("Scripting.FileSystemObject")
 
 ' 项目目录
 projectDir = "d:\text1\questmind"
-batFile = projectDir & "\QuestMind-Silent.bat"
+appExe = projectDir & "\src-tauri\target\release\questmind.exe"
 
-If Not FSO.FileExists(batFile) Then
-    MsgBox "找不到启动脚本：" & vbCrLf & batFile, vbCritical, "QuestMind"
+If Not FSO.FileExists(appExe) Then
+    MsgBox "找不到正式程序，请先运行 build-app.bat：" & vbCrLf & appExe, vbCritical, "QuestMind"
     WScript.Quit
 End If
 
@@ -19,11 +19,11 @@ End If
 desktop = WshShell.SpecialFolders("Desktop")
 shortcutPath = desktop & "\QuestMind.lnk"
 
-' 创建快捷方式
+' 快捷方式直接指向 Windows GUI 程序，不经过 bat/cmd/npm 开发链路。
 Set shortcut = WshShell.CreateShortcut(shortcutPath)
-shortcut.TargetPath = batFile
+shortcut.TargetPath = appExe
 shortcut.WorkingDirectory = projectDir
-shortcut.WindowStyle = 7          ' 7 = 最小化窗口
+shortcut.WindowStyle = 1
 shortcut.Description = "QuestMind - AI 陪伴式学习平台"
 shortcut.IconLocation = projectDir & "\src-tauri\icons\icon.ico"
 shortcut.Save

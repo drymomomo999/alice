@@ -1,6 +1,6 @@
-import { useState, useCallback, useEffect, useRef } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { ArrowLeft, FileText, Upload, Loader2 } from 'lucide-react'
+import { ArrowLeft, FileText, Upload, Loader2, RefreshCw } from 'lucide-react'
 import { useGoalsStore, useUserStore } from '@/store'
 import {
   generateLecture,
@@ -49,17 +49,20 @@ export function LectureRoomPage() {
   // 获取有 URL 的文档附件（用于 PDF 渲染）
   const docAttachments = goal?.attachments?.filter(a => a.type === 'document') || []
   const activeDoc = docAttachments[activeDocIndex] || null
+  const activeDocId = activeDoc?.id
+  const activeDocUrl = activeDoc?.url
 
-  // Blob URL 加载（绕过 CSP 和 X-Frame-Options）
-  const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null)
+  // PDF 字节加载。不要转成 blob URL：Tauri WebView 中 PDF.js 对 blob URL 的
+  // 二次请求可能得到 status 0（Unexpected server response）。
+  const [pdfData, setPdfData] = useState<Uint8Array<ArrayBuffer> | null>(null)
   const [pdfLoading, setPdfLoading] = useState(false)
   const [pdfError, setPdfError] = useState<string | null>(null)
-  const blobUrlRef = useRef<string | null>(null)
+  const [pdfReloadKey, setPdfReloadKey] = useState(0)
 
-  // 文档切换时下载 PDF 为 Blob
+  // 文档切换或手动重试时下载 PDF，并直接保留为内存字节。
   useEffect(() => {
-    if (!activeDoc?.url) {
-      setPdfBlobUrl(null)
+    if (!activeDocUrl) {
+      setPdfData(null)
       setPdfError(null)
       return
     }
@@ -68,16 +71,14 @@ export function LectureRoomPage() {
     const loadPdf = async () => {
       setPdfLoading(true)
       setPdfError(null)
+      setPdfData(null)
       try {
-        const resp = await fetch(activeDoc!.url!)
+        const resp = await fetch(activeDocUrl)
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`)
-        const blob = await resp.blob()
+        const buffer = await resp.arrayBuffer()
+        if (buffer.byteLength === 0) throw new Error('下载到的文档为空')
         if (cancelled) return
-        // 清理旧 blob URL
-        if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current)
-        const url = URL.createObjectURL(blob)
-        blobUrlRef.current = url
-        setPdfBlobUrl(url)
+        setPdfData(new Uint8Array(buffer))
       } catch (e) {
         if (!cancelled) setPdfError(e instanceof Error ? e.message : '加载失败')
       } finally {
@@ -88,14 +89,7 @@ export function LectureRoomPage() {
     return () => {
       cancelled = true
     }
-  }, [activeDoc?.url, activeDoc?.id])
-
-  // 组件卸载时清理 blob URL
-  useEffect(() => {
-    return () => {
-      if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current)
-    }
-  }, [])
+  }, [activeDocUrl, activeDocId, pdfReloadKey])
 
   // 连续讲解流：获取最近一条讲解消息
   const getLastLectureContent = useCallback((): string | null => {
@@ -346,10 +340,17 @@ export function LectureRoomPage() {
                 <p className="text-sm text-gray-700 font-medium mb-1">文档加载失败</p>
                 <p className="text-xs text-gray-400 leading-relaxed">{pdfError}</p>
               </div>
+              <button
+                onClick={() => setPdfReloadKey(key => key + 1)}
+                className="px-3 py-1.5 text-xs rounded-lg bg-sakura/15 text-sakura hover:bg-sakura/25 transition-colors flex items-center gap-1.5"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                重新加载
+              </button>
             </div>
           ) : (
             <PdfPageRenderer
-              pdfUrl={pdfBlobUrl}
+              pdfData={pdfData}
               fileName={activeDoc.name}
             />
           )

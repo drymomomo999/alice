@@ -6,12 +6,13 @@
  */
 import { useState, useEffect } from 'react'
 import {
-  Play, Pause, Check, Sparkles, Loader2,
+  Play, Pause, Check, Sparkles, Loader2, SlidersHorizontal,
 } from 'lucide-react'
 import { askTaskAssistant, buildGoalContextString } from '@/services/ai.service'
 import { useUserStore } from '@/store'
 import { MarkdownRenderer } from '@/components/MarkdownRenderer'
 import type { DailyTask, Goal } from '@/types'
+import type { GoalTaskFeedback } from '@/features/goals/planning'
 import { cn } from '@/lib/utils'
 
 interface DailyTaskCardProps {
@@ -23,6 +24,7 @@ interface DailyTaskCardProps {
   onStartTask: (goalId: string, taskId: string) => void
   onStopTask: (goalId: string, taskId: string, markCompleted?: boolean) => void
   onToggleComplete: (goalId: string, taskId: string) => void
+  onTaskFeedback: (taskId: string, feedback: GoalTaskFeedback) => Promise<string | null>
   formatTimeDisplay: (seconds: number) => string
 }
 
@@ -35,11 +37,15 @@ export function DailyTaskCard({
   onStartTask,
   onStopTask,
   onToggleComplete,
+  onTaskFeedback,
   formatTimeDisplay,
 }: DailyTaskCardProps) {
   const { user } = useUserStore()
   const [guideContent, setGuideContent] = useState<string | null>(null)
   const [isGuideLoading, setIsGuideLoading] = useState(false)
+  const [showFeedback, setShowFeedback] = useState(false)
+  const [feedbackMessage, setFeedbackMessage] = useState<string | null>(task.adaptationNote || null)
+  const [isFeedbackLoading, setIsFeedbackLoading] = useState(false)
 
   // 计算已用时间
   const getTaskElapsed = (t: DailyTask): number => {
@@ -53,6 +59,14 @@ export function DailyTaskCard({
   const elapsed = getTaskElapsed(task)
   // 引用 goalsVersion 防止 React 编译器优化掉重渲染
   void goalsVersion
+
+  const submitFeedback = async (feedback: GoalTaskFeedback) => {
+    setIsFeedbackLoading(true)
+    const message = await onTaskFeedback(task.id, feedback)
+    setFeedbackMessage(message)
+    setShowFeedback(false)
+    setIsFeedbackLoading(false)
+  }
 
   // 当展开学习指引时，加载 AI 内容
   useEffect(() => {
@@ -86,7 +100,7 @@ export function DailyTaskCard({
 
     fetchGuide()
     return () => { cancelled = true }
-  }, [isStudyGuideOpen, guideContent, task.title, task.description, goal.title, goal.category, user?.nickname])
+  }, [isStudyGuideOpen, guideContent, task.title, task.description, goal, user?.nickname])
 
   return (
     <div>
@@ -146,6 +160,14 @@ export function DailyTaskCard({
             </button>
           )}
 
+          {!task.completed && (
+            <button onClick={() => setShowFeedback(value => !value)}
+              className={cn('p-1.5 rounded-lg transition-all', showFeedback ? 'bg-amber-100 text-amber-600' : 'bg-gray-50 text-gray-500 hover:bg-amber-50 hover:text-amber-600')}
+              title="告诉我这项任务哪里不合适">
+              <SlidersHorizontal className="w-3.5 h-3.5" />
+            </button>
+          )}
+
           {/* 播放/暂停按钮 */}
           {!task.completed && (
             task.isRunning ? (
@@ -164,6 +186,29 @@ export function DailyTaskCard({
           )}
         </div>
       </div>
+
+      {showFeedback && !task.completed && (
+        <div className="ml-8 mt-1.5 p-2.5 rounded-xl bg-amber-50 border border-amber-200/60">
+          <p className="text-[10px] font-semibold text-amber-700 mb-2">这项任务哪里不合适？我会据此调整后续安排</p>
+          <div className="grid grid-cols-2 gap-1.5">
+            {([
+              ['too_hard', '太难，拆小一点'],
+              ['no_time', '今天没时间'],
+              ['already_know', '我已经会了'],
+              ['blocked', '被前置条件卡住'],
+            ] as const).map(([value, label]) => (
+              <button key={value} disabled={isFeedbackLoading} onClick={() => submitFeedback(value)}
+                className="px-2 py-1.5 rounded-lg bg-white border border-amber-200/70 text-[10px] text-amber-800 hover:bg-amber-100 disabled:opacity-50">
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {feedbackMessage && (
+        <div className="ml-8 mt-1 text-[10px] text-amber-700">↳ {feedbackMessage}</div>
+      )}
 
       {/* AI 学习指引展开区域 */}
       {isStudyGuideOpen && (

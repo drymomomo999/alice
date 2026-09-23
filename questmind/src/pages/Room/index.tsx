@@ -8,6 +8,7 @@ import {
   ArrowLeft,
   Trash2,
   BookOpen,
+  NotebookPen,
   SlidersHorizontal,
   Volume2,
   VolumeX,
@@ -17,7 +18,7 @@ import { RoomBackground } from '@/components/AliceRoom/RoomBackground'
 import { CharacterSprite } from '@/components/AliceRoom/CharacterSprite'
 import { DialogBox } from '@/components/AliceRoom/DialogBox'
 import { ChatInput } from '@/components/AliceRoom/ChatInput'
-import { sendAIMessage } from '@/services/ai.service'
+import { callDeepSeekAPI, sendAIMessage, stripDialogueTimePrefix } from '@/services/ai.service'
 import { MarkdownRenderer } from '@/components/MarkdownRenderer'
 import { useUserStore, useAIChatStore } from '@/store'
 import { formatLastVisit } from '@/services/alice.service'
@@ -30,6 +31,7 @@ import {
 import { useAliceVoice } from '@/hooks/useAliceVoice'
 import { ProfilePanel } from './ProfilePanel'
 import { VoiceSettingsPanel } from './VoiceSettingsPanel'
+import { DiaryPanel } from './DiaryPanel'
 import {
   loadProfile,
   saveProfile,
@@ -56,6 +58,20 @@ import {
   hydrateRelationshipStoreFromCloud,
   syncRelationshipStoreToCloud,
 } from '@/services/aliceRelationshipCloud.service'
+import {
+  buildDiaryFallback,
+  buildDiaryPrompt,
+  buildShareRuntimePrompt,
+  recordSharedStory,
+  recordShareReaction,
+  shouldWriteAliceDiary,
+  upsertDiaryEntry,
+} from '@/services/aliceLife.service'
+import {
+  hydrateAliceLifeFromCloud,
+  prepareAliceShare,
+  syncAliceLifeToCloud,
+} from '@/services/aliceLifeCloud.service'
 
 // 生成智能问候语（根据历史和上次来访时间）
 function buildGreeting(
@@ -89,16 +105,16 @@ function buildGreeting(
 
   // 第一次 or 很久没来
   if (isLate) {
-    return `这么晚了还没睡。我在呢，你那边冷吧？慢慢来，想说什么就说。🌙`
+    return `这么晚了还没睡。我在呢，慢慢来，想说什么就说。🌙`
   }
   if (isMorning) {
-    return `早呀，${userName}。阳光挺好的，今天开始得不错。`
+    return `早呀，${userName}。新的一天开始了，先来跟我说说话吧。`
   }
 
   const defaults = [
-    `你来啦。今天深圳好热，我在屋里开着空调，刚听了一首歌。最近过得怎么样？🌸`,
+    `你来啦。我刚把桌边收拾好，正适合安安静静聊一会儿。最近过得怎么样？🌸`,
     `嗯，来了。我刚好在这里。最近过得怎么样？`,
-    `你来了。深圳今天风挺大的，你那边冷不冷？有什么想聊的吗？`,
+    `你来了。我正想着今天会不会听到一点新鲜事。有什么想聊的吗？`,
   ]
   return defaults[Math.floor(Math.random() * defaults.length)]
 }
@@ -129,6 +145,7 @@ export function RoomPage() {
   const [profile, setProfile] = useState<AliceProfile>(() => loadProfile())
   const [showProfilePanel, setShowProfilePanel] = useState(false)
   const [showVoiceSettings, setShowVoiceSettings] = useState(false)
+  const [showDiary, setShowDiary] = useState(false)
 
   useEffect(() => {
     const userId = user?.id || 'demo'
@@ -141,6 +158,10 @@ export function RoomPage() {
     }
     seedRelationshipFromLegacyProfile(userId, profile)
   }, [profile, user, isDemo])
+
+  useEffect(() => {
+    if (user && !isDemo) void hydrateAliceLifeFromCloud(user.id)
+  }, [user, isDemo])
 
   // 构建初始问候（只在组件挂载时确定一次）
   const initialGreeting = useMemo(() => {
@@ -157,7 +178,7 @@ export function RoomPage() {
   const [currentExpression, setCurrentExpression] = useState<AliceExpression | null>('proud')
   const [inputValue, setInputValue] = useState('')
   const [isLoading, setIsLoading] = useState(false)
-  const [isSpeaking, setIsSpeaking] = useState(false)
+  const [isSpeaking, setIsSpeaking] = useState(true)
   const {
     enabled: voiceEnabled,
     isSpeaking: isVoiceSpeaking,
@@ -188,7 +209,6 @@ export function RoomPage() {
   useEffect(() => {
     markVisit('alice')
     // 打字机开始播放初始问候
-    setIsSpeaking(true)
     const greetingTimer = setTimeout(() => {
       speakAsAlice(initialGreeting, 'proud')
     }, 450)
@@ -217,6 +237,7 @@ export function RoomPage() {
       }, EXPRESSION_RESET_DELAY)
     }
   }, [])
+
 
   // 打字机完成回调
   const handleTextComplete = useCallback(() => {
@@ -258,8 +279,11 @@ export function RoomPage() {
     if (user && !isDemo) saveToDb(user.id, 'alice', userMessage, true, 'HOME')
 
     try {
+      const userId = user?.id || 'demo'
+      const lifeAfterReaction = recordShareReaction(userId, userMessage)
+      void syncAliceLifeToCloud(lifeAfterReaction)
       const relationshipStore = recordRelationshipUserMessage({
-        userId: user?.id || 'demo',
+        userId,
         scene: 'HOME',
         message: userMessage,
       })
@@ -285,6 +309,11 @@ export function RoomPage() {
       })
       const dialogueDecision = decideAliceAction(userMessage, aliceContext)
       updateConversationState(aliceContext, dialogueDecision, userMessage)
+      const shareCandidate = dialogueDecision.socialIntent === 'VENT'
+        ? null
+        : await prepareAliceShare(userId, userMessage)
+      const runtimeContext = serializeAliceRuntimeContext(aliceContext, dialogueDecision)
+        + (shareCandidate ? buildShareRuntimePrompt(shareCandidate) : '')
 
       const response = await sendAIMessage({
         characterId: 'alice',
@@ -293,8 +322,12 @@ export function RoomPage() {
         scene: 'HOME',
         customSystemPrompt: systemPrompt,
         messageHistory: currentHistory,
-        runtimeContext: serializeAliceRuntimeContext(aliceContext, dialogueDecision),
+        runtimeContext,
       })
+      if (shareCandidate) {
+        const lifeAfterShare = recordSharedStory(userId, shareCandidate)
+        void syncAliceLifeToCloud(lifeAfterShare)
+      }
       const relationshipAfterResponse = recordRelationshipResponse(
         user?.id || 'demo',
         aliceContext.relationship,
@@ -318,6 +351,40 @@ export function RoomPage() {
       setActiveDialogText(response)
       setIsSpeaking(true)
       speakAsAlice(response, inferredExpression, dialogueDecision.voiceState)
+
+      const diaryHistory: AIMessage[] = [
+        ...currentHistory,
+        {
+          id: `a-diary-${Date.now()}`,
+          timestamp: new Date().toISOString(),
+          characterId: 'alice',
+          content: response,
+          isUser: false,
+          scene: 'HOME',
+        },
+      ]
+      if (shouldWriteAliceDiary(userId, diaryHistory)) {
+        void callDeepSeekAPI([
+          { role: 'system', content: '只完成私人日记写作，不解释要求。' },
+          { role: 'user', content: buildDiaryPrompt(user?.nickname || '朋友', diaryHistory) },
+        ], 360).then(content => {
+          const diaryContent = content || buildDiaryFallback(user?.nickname || '朋友', userMessage, response)
+          const diaryStore = upsertDiaryEntry({
+            userId,
+            content: diaryContent,
+            title: /开心|成功|喜欢|搞定/.test(userMessage) ? '值得开心的一天' : '今天的小事',
+            mood: /开心|成功|喜欢|搞定/.test(userMessage) ? 'sunny'
+              : /难过|累|烦|害怕/.test(userMessage) ? 'thoughtful' : 'soft',
+          })
+          void syncAliceLifeToCloud(diaryStore)
+        }).catch(() => {
+          const diaryStore = upsertDiaryEntry({
+            userId,
+            content: buildDiaryFallback(user?.nickname || '朋友', userMessage, response),
+          })
+          void syncAliceLifeToCloud(diaryStore)
+        })
+      }
 
       // ── 后台：递增消息计数 + 自动分析用户偏好（完全隐藏，用户无感知）──
       const updatedProfile: AliceProfile = {
@@ -489,6 +556,14 @@ export function RoomPage() {
           <SlidersHorizontal className="w-4 h-4 text-pink-600" />
         </button>
         <button
+          onClick={() => setShowDiary(true)}
+          className="p-2 rounded-full bg-white/70 backdrop-blur-sm shadow-sm border border-pink-200/30 hover:bg-white/90 transition-colors"
+          title="艾莉丝的日记"
+          aria-label="艾莉丝的日记"
+        >
+          <NotebookPen className="w-4 h-4 text-pink-600" />
+        </button>
+        <button
           onClick={() => setShowProfilePanel(true)}
           className="p-2 rounded-full bg-white/70 backdrop-blur-sm shadow-sm border border-pink-200/30 hover:bg-white/90 transition-colors"
           title="人物档案"
@@ -634,7 +709,7 @@ export function RoomPage() {
                         {msg.isUser ? (
                           <span className="whitespace-pre-wrap">{msg.content}</span>
                         ) : (
-                          <MarkdownRenderer content={msg.content} className="text-sm" />
+                          <MarkdownRenderer content={stripDialogueTimePrefix(msg.content)} className="text-sm" />
                         )}
                       </div>
                     </div>
@@ -658,6 +733,16 @@ export function RoomPage() {
             onPreview={previewCustomVoice}
             onReset={resetVoiceSettings}
             onClose={() => setShowVoiceSettings(false)}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* 艾莉丝的日记 */}
+      <AnimatePresence>
+        {showDiary && (
+          <DiaryPanel
+            userId={user?.id || 'demo'}
+            onClose={() => setShowDiary(false)}
           />
         )}
       </AnimatePresence>

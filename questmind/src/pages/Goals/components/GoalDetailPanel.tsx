@@ -17,7 +17,8 @@ import { useGoalsStore } from '@/store'
 import { formatDate, generateId, cn } from '@/lib/utils'
 import { uploadGoalAttachment, deleteGoalAttachment, formatFileSize, isAcceptableFileType, getAttachmentType } from '@/services/supabase'
 import { extractTextFromFile } from '@/lib/fileExtractor'
-import { classifyGoalAttachment } from '@/course-engine/service'
+import { analyzeGoalCourse, classifyGoalAttachment, projectContinuityPlanToGoal } from '@/course-engine/service'
+import { scheduleGoalTasks, type GoalTaskFeedback } from '@/features/goals/planning'
 import { generateChapterOutline, type ChapterOutline } from '@/services/ai.service'
 import { StudyGuideCard } from './StudyGuideCard'
 import { CourseLearningPanel } from './CourseLearningPanel'
@@ -86,7 +87,7 @@ export function GoalDetailPanel({
   formatTimeDisplay,
   onGenerateFinalExam,
 }: GoalDetailPanelProps) {
-  const { updateGoal, startDailyTask, stopDailyTask, toggleDailyTask } = useGoalsStore()
+  const { updateGoal, startDailyTask, stopDailyTask, toggleDailyTask, applyTaskFeedback } = useGoalsStore()
   const navigate = useNavigate()
   const [activeStudyTaskId, setActiveStudyTaskId] = useState<string | null>(null)
 
@@ -112,6 +113,12 @@ export function GoalDetailPanel({
   // 切换学习指引展开/收起
   const handleToggleStudyGuide = (taskId: string) => {
     setActiveStudyTaskId(prev => prev === taskId ? null : taskId)
+  }
+
+  const handleTaskFeedback = async (taskId: string, feedback: GoalTaskFeedback): Promise<string | null> => {
+    if (!selectedGoal) return null
+    const result = await applyTaskFeedback(selectedGoal.id, taskId, feedback)
+    return result?.summary || null
   }
 
   // 编辑上下文
@@ -176,6 +183,11 @@ export function GoalDetailPanel({
 
       if (newAttachments.length > (selectedGoal.attachments?.length || 0)) {
         updateGoal(selectedGoal.id, { attachments: newAttachments })
+        if (newAttachments.some(attachment => attachment.type === 'document' && attachment.extractedText)) {
+          const goalWithAttachments = { ...selectedGoal, attachments: newAttachments }
+          const courseModel = analyzeGoalCourse(goalWithAttachments, selectedGoal.userId || 'local-user')
+          updateGoal(selectedGoal.id, projectContinuityPlanToGoal(courseModel, goalWithAttachments))
+        }
       }
     } catch (err) {
       console.error('Upload failed:', err)
@@ -264,8 +276,6 @@ export function GoalDetailPanel({
   }
 
   // 格式化时间（共享给 DailyTaskCard）
-  const _formatTime = formatTimeDisplay
-
   if (!selectedGoal) {
     return (
       <div className="flex-1 min-w-0 rounded-2xl border border-sakura-light/30 bg-white/90 overflow-hidden shadow-sm flex flex-col">
@@ -285,6 +295,26 @@ export function GoalDetailPanel({
       </div>
     )
   }
+
+  const taskSchedule = scheduleGoalTasks(selectedGoal)
+  const executionTasks = [...taskSchedule.overdue, ...taskSchedule.today]
+  const guideTasks = executionTasks.length > 0 ? executionTasks : taskSchedule.upcoming.slice(0, 1)
+
+  const renderTask = (task: NonNullable<Goal['dailyTasks']>[number]) => (
+    <DailyTaskCard
+      key={task.id}
+      task={task}
+      goal={selectedGoal}
+      goalsVersion={goalsVersion}
+      isStudyGuideOpen={activeStudyTaskId === task.id}
+      onToggleStudyGuide={handleToggleStudyGuide}
+      onStartTask={startDailyTask}
+      onStopTask={stopDailyTask}
+      onToggleComplete={toggleDailyTask}
+      onTaskFeedback={handleTaskFeedback}
+      formatTimeDisplay={formatTimeDisplay}
+    />
+  )
 
   return (
     <div className="flex-1 min-w-0 rounded-2xl border border-sakura-light/30 bg-white/90 overflow-hidden shadow-sm flex flex-col">
@@ -671,37 +701,61 @@ export function GoalDetailPanel({
                   ?.filter(a => a.type === 'document' && a.extractedText)
                   .map(a => ({ name: a.name, text: a.extractedText! }))
               }
-              dailyTasks={selectedGoal.dailyTasks}
+              dailyTasks={guideTasks}
             />
           )}
 
-          {/* 全部任务 */}
+          {/* 按计划日期组织任务，避免把整个月的任务一次性压给用户。 */}
           {selectedGoal.dailyTasks && selectedGoal.dailyTasks.length > 0 && (
-            <div>
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
-                  <ClipboardList className="w-4 h-4 text-peach" />
-                  全部任务
-                  <span className="text-[10px] text-muted-foreground font-normal">
-                    ({selectedGoal.dailyTasks!.filter(t => t.completed).length}/{selectedGoal.dailyTasks!.length})
-                  </span>
-                </h3>
+            <div className="space-y-5">
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
+                    <ClipboardList className="w-4 h-4 text-peach" />
+                    今天 · 第 {taskSchedule.dayNumber} 天
+                  </h3>
+                  <span className="text-[10px] text-muted-foreground">{executionTasks.length} 项待执行</span>
+                </div>
+                {taskSchedule.overdue.length > 0 && (
+                  <div className="mb-3 p-2.5 rounded-xl bg-amber-50 border border-amber-200/60">
+                    <p className="text-[11px] font-semibold text-amber-700 mb-2">有 {taskSchedule.overdue.length} 项此前未完成，已优先放到今天</p>
+                    <div className="space-y-2">{taskSchedule.overdue.map(renderTask)}</div>
+                  </div>
+                )}
+                <div className="space-y-2">
+                  {taskSchedule.today.length > 0
+                    ? taskSchedule.today.map(renderTask)
+                    : taskSchedule.overdue.length === 0 && (
+                      <div className="py-5 text-center rounded-xl border border-dashed border-green-200 bg-green-50/40 text-xs text-green-600">
+                        今天没有待办任务，可以休息或提前开始下一项。
+                      </div>
+                    )}
+                </div>
               </div>
-              <div className="space-y-2">
-                {selectedGoal.dailyTasks.map(task => (
-                  <DailyTaskCard
-                    key={task.id}
-                    task={task}
-                    goal={selectedGoal}
-                    goalsVersion={goalsVersion}
-                    isStudyGuideOpen={activeStudyTaskId === task.id}
-                    onToggleStudyGuide={handleToggleStudyGuide}
-                    onStartTask={startDailyTask}
-                    onStopTask={stopDailyTask}
-                    onToggleComplete={toggleDailyTask}
-                    formatTimeDisplay={_formatTime}
-                  />
-                ))}
+
+              {taskSchedule.upcoming.length > 0 && (
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-sm font-bold text-foreground flex items-center gap-2">
+                      <Calendar className="w-4 h-4 text-lavender" />后续计划
+                    </h3>
+                    <span className="text-[10px] text-muted-foreground">{taskSchedule.upcoming.length} 项</span>
+                  </div>
+                  <div className="space-y-2">
+                    {taskSchedule.upcoming.map(task => (
+                      <div key={task.id}>
+                        <div className="text-[10px] text-muted-foreground mb-1 ml-1">第 {task.dayIndex} 天</div>
+                        {renderTask(task)}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-[10px] text-muted-foreground">
+                  总进度：{taskSchedule.completed.length}/{selectedGoal.dailyTasks.length} 项
+                </span>
               </div>
             </div>
           )}

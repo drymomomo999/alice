@@ -38,6 +38,13 @@ export function isSupabaseConfigured(): boolean {
   return !!(supabaseUrl && supabaseAnonKey)
 }
 
+function isMissingColumnError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false
+  const message = 'message' in error ? String((error as { message?: unknown }).message || '') : ''
+  const code = 'code' in error ? String((error as { code?: unknown }).code || '') : ''
+  return code === '42703' || /column .* does not exist|schema cache|Could not find .* column/i.test(message)
+}
+
 // =====================================================
 // 用户相关操作
 // =====================================================
@@ -68,7 +75,7 @@ export async function getUserByAuthId(authId: string): Promise<User | null> {
   
   if (error) {
     console.error('Error fetching user by auth_id:', error)
-    return null
+    throw error
   }
   return data ? transformUserFromDb(data) : null
 }
@@ -175,7 +182,7 @@ export async function getGoals(userId: string): Promise<Goal[]> {
   
   if (error) {
     console.error('Error fetching goals:', error)
-    return []
+    throw error
   }
   
   // 获取每个目标的子目标和每日任务
@@ -217,22 +224,38 @@ export async function createGoal(
   goal: Omit<Goal, 'id' | 'userId' | 'createdAt' | 'updatedAt' | 'subGoals' | 'progress'>
 ): Promise<Goal | null> {
   const client = getSupabase()
-  const { data, error } = await client
+
+  const baseInsert = {
+    user_id: userId,
+    title: goal.title,
+    description: goal.description,
+    status: goal.status,
+    priority: goal.priority,
+    start_date: goal.startDate,
+    end_date: goal.endDate,
+    current_status: goal.currentStatus,
+    context: goal.context,
+    attachments: goal.attachments || [],
+  }
+
+  let { data, error } = await client
     .from('goals')
     .insert({
-      user_id: userId,
-      title: goal.title,
-      description: goal.description,
-      status: goal.status,
-      priority: goal.priority,
-      start_date: goal.startDate,
-      end_date: goal.endDate,
-      current_status: goal.currentStatus,
-      context: goal.context,
-      attachments: goal.attachments || [],
+      ...baseInsert,
+      category: goal.category,
     })
     .select()
     .single()
+
+  if (error && isMissingColumnError(error)) {
+    const fallback = await client
+      .from('goals')
+      .insert(baseInsert)
+      .select()
+      .single()
+    data = fallback.data
+    error = fallback.error
+  }
   
   if (error) {
     console.error('Error creating goal:', error)
@@ -254,6 +277,7 @@ export async function updateGoal(
   if (updates.description !== undefined) dbUpdates.description = updates.description
   if (updates.status !== undefined) dbUpdates.status = updates.status
   if (updates.priority !== undefined) dbUpdates.priority = updates.priority
+  if (updates.category !== undefined) dbUpdates.category = updates.category
   if (updates.startDate !== undefined) dbUpdates.start_date = updates.startDate
   if (updates.endDate !== undefined) dbUpdates.end_date = updates.endDate
   if (updates.progress !== undefined) dbUpdates.progress = updates.progress
@@ -325,18 +349,35 @@ export async function getSubGoals(goalId: string): Promise<SubGoal[]> {
 export async function createSubGoal(
   goalId: string,
   title: string,
-  orderIndex: number = 0
+  orderIndex: number = 0,
+  details?: Pick<SubGoal, 'description' | 'dayRange'>,
 ): Promise<SubGoal | null> {
   const client = getSupabase()
-  const { data, error } = await client
+  const baseInsert = {
+    goal_id: goalId,
+    title,
+    order_index: orderIndex,
+  }
+
+  let { data, error } = await client
     .from('sub_goals')
     .insert({
-      goal_id: goalId,
-      title,
-      order_index: orderIndex
+      ...baseInsert,
+      description: details?.description,
+      day_range: details?.dayRange,
     })
     .select()
     .single()
+
+  if (error && isMissingColumnError(error)) {
+    const fallback = await client
+      .from('sub_goals')
+      .insert(baseInsert)
+      .select()
+      .single()
+    data = fallback.data
+    error = fallback.error
+  }
   
   if (error) {
     console.error('Error creating sub_goal:', error)
@@ -492,6 +533,55 @@ export async function toggleDailyTask(taskId: string): Promise<DailyTask | null>
   return transformDailyTaskFromDb(data)
 }
 
+export async function updateDailyTask(taskId: string, task: Partial<DailyTask>): Promise<DailyTask | null> {
+  const client = getSupabase()
+  const baseUpdates = {
+    title: task.title,
+    description: task.description,
+    duration: task.duration,
+    frequency: task.frequency,
+    completed: task.completed,
+    completed_at: task.completedAt || null,
+    order_index: task.orderIndex,
+    day_index: task.dayIndex,
+    sub_goal_index: task.subGoalIndex,
+    difficulty_level: task.difficultyLevel,
+    resource_reference: task.resourceReference,
+    checklist: task.checklist,
+  }
+  const updates = {
+    ...baseUpdates,
+    original_day_index: task.originalDayIndex,
+    last_feedback: task.lastFeedback,
+    last_feedback_at: task.lastFeedbackAt,
+    adaptation_note: task.adaptationNote,
+  }
+
+  let { data, error } = await client
+    .from('daily_tasks')
+    .update(updates)
+    .eq('id', taskId)
+    .select()
+    .single()
+
+  if (error && isMissingColumnError(error)) {
+    const fallback = await client
+      .from('daily_tasks')
+      .update(baseUpdates)
+      .eq('id', taskId)
+      .select()
+      .single()
+    data = fallback.data
+    error = fallback.error
+  }
+
+  if (error) {
+    console.error('Error updating daily_task:', error)
+    return null
+  }
+  return transformDailyTaskFromDb(data)
+}
+
 export async function deleteDailyTask(taskId: string): Promise<boolean> {
   const client = getSupabase()
   const { error } = await client
@@ -512,19 +602,40 @@ export async function createDailyTasks(
   tasks: Array<Omit<DailyTask, 'id' | 'goalId' | 'completed' | 'completedAt' | 'orderIndex'>>
 ): Promise<DailyTask[]> {
   const client = getSupabase()
-  const tasksToInsert = tasks.map((task, index) => ({
+  const baseTasksToInsert = tasks.map((task, index) => ({
     goal_id: goalId,
     title: task.title,
     description: task.description,
     duration: task.duration,
     frequency: task.frequency || 'daily',
-    order_index: index
+    order_index: index,
+  }))
+  const tasksToInsert = tasks.map((task, index) => ({
+    ...baseTasksToInsert[index],
+    day_index: task.dayIndex,
+    sub_goal_index: task.subGoalIndex,
+    difficulty_level: task.difficultyLevel,
+    resource_reference: task.resourceReference,
+    checklist: task.checklist || [],
+    original_day_index: task.originalDayIndex || task.dayIndex,
+    last_feedback: task.lastFeedback,
+    last_feedback_at: task.lastFeedbackAt,
+    adaptation_note: task.adaptationNote,
   }))
   
-  const { data, error } = await client
+  let { data, error } = await client
     .from('daily_tasks')
     .insert(tasksToInsert)
     .select()
+
+  if (error && isMissingColumnError(error)) {
+    const fallback = await client
+      .from('daily_tasks')
+      .insert(baseTasksToInsert)
+      .select()
+    data = fallback.data
+    error = fallback.error
+  }
   
   if (error) {
     console.error('Error creating daily_tasks:', error)
@@ -544,6 +655,8 @@ export async function resetDailyTasks(goalId: string): Promise<boolean> {
       completed_at: null
     })
     .eq('goal_id', goalId)
+    .eq('frequency', 'daily')
+    .is('day_index', null)
   
   if (error) {
     console.error('Error resetting daily_tasks:', error)
@@ -840,6 +953,7 @@ export function formatFileSize(bytes: number): string {
 function transformUserFromDb(data: any): User {
   return {
     id: data.id,
+    authId: data.auth_id,
     email: data.email || undefined,
     nickname: data.nickname,
     avatar: data.avatar,
@@ -861,6 +975,7 @@ function transformGoalFromDb(data: any, subGoals: SubGoal[], dailyTasks: DailyTa
     description: data.description || '',
     status: data.status,
     priority: data.priority,
+    category: data.category || undefined,
     startDate: data.start_date,
     endDate: data.end_date,
     progress: data.progress,
@@ -884,7 +999,16 @@ function transformDailyTaskFromDb(data: any): DailyTask {
     frequency: data.frequency,
     completed: data.completed,
     completedAt: data.completed_at,
-    orderIndex: data.order_index || 0
+    orderIndex: data.order_index || 0,
+    dayIndex: data.day_index ?? undefined,
+    subGoalIndex: data.sub_goal_index ?? undefined,
+    difficultyLevel: data.difficulty_level || undefined,
+    resourceReference: data.resource_reference || undefined,
+    checklist: data.checklist || undefined,
+    originalDayIndex: data.original_day_index ?? data.day_index ?? undefined,
+    lastFeedback: data.last_feedback || undefined,
+    lastFeedbackAt: data.last_feedback_at || undefined,
+    adaptationNote: data.adaptation_note || undefined,
   }
 }
 
@@ -894,7 +1018,9 @@ function transformSubGoalFromDb(data: any): SubGoal {
     goalId: data.goal_id,
     title: data.title,
     completed: data.completed,
-    completedAt: data.completed_at
+    completedAt: data.completed_at,
+    description: data.description || undefined,
+    dayRange: data.day_range || undefined,
   }
 }
 

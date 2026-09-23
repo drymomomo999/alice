@@ -67,7 +67,10 @@ export function OnboardingPage() {
   
   const [currentStep, setCurrentStep] = useState<OnboardingStep>('nickname')
   const [nickname, setNickname] = useState(user?.nickname || '')
-  const [selectedAvatar, setSelectedAvatar] = useState(SYSTEM_AVATARS[0])
+  // 重新进入 onboarding（例如旧账号资料不完整）时回填已有头像，避免每次重置为第一项。
+  const [selectedAvatar, setSelectedAvatar] = useState(() =>
+    SYSTEM_AVATARS.find(avatar => avatar.emoji === user?.avatar) || SYSTEM_AVATARS[0]
+  )
   const [timePreference, setTimePreference] = useState<TimePreference>('flexible')
   const [selectedGoals, setSelectedGoals] = useState<GoalCategory[]>([])
   const [isSubmitting, setIsSubmitting] = useState(false)

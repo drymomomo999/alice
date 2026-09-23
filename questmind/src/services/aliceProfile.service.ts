@@ -417,7 +417,7 @@ export function buildRoomPromptFromProfile(
   // 固定规则
   prompt += `\n${FIXED_RULES}\n`
 
-  // 当前时间 —— 让艾莉丝有现实时间感，配合历史消息里的时间标记，能区分不同时段说过的话
+  // 当前时间 —— 仅供艾莉丝在内部判断当前时段，不展示为对话时间戳
   prompt += `\n【当前时间】${getCurrentTimeContext()}\n`
 
   // 用户名

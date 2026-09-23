@@ -1,7 +1,7 @@
 /**
  * 客户端文件文字提取工具
  *
- * 支持：TXT/MD（直接读取）、PDF（pdf.js 智能分段）、DOCX（mammoth）
+ * 支持：TXT/MD（直接读取）、PDF（pdf.js 智能分段）、DOCX（mammoth）、PPTX（逐页 XML）
  * 图片：不提取文字，用户可手动输入描述
  *
  * PDF 改进（2026-06-01）：
@@ -16,21 +16,31 @@ const MAX_EXTRACTED_LENGTH = 10000
  * 从文件中提取文字内容
  * @returns 提取的文字（截断至 MAX_EXTRACTED_LENGTH），图片或提取失败返回 null
  */
-export async function extractTextFromFile(file: File): Promise<string | null> {
+export interface FileExtractionOptions {
+  maxLength?: number
+  maxPages?: number
+}
+
+export async function extractTextFromFile(file: File, options: FileExtractionOptions = {}): Promise<string | null> {
+  const maxLength = options.maxLength || MAX_EXTRACTED_LENGTH
   try {
     if (file.type === 'text/plain' || file.type === 'text/markdown' || /\.txt$|\.md$/i.test(file.name)) {
-      return truncate(await file.text())
+      return truncate(await file.text(), maxLength)
     }
     if (file.type === 'application/pdf' || /\.pdf$/i.test(file.name)) {
-      const text = await extractPdfText(file)
-      return truncate(text)
+      const text = await extractPdfText(file, options.maxPages)
+      return truncate(text, maxLength)
     }
     if (
       file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
       /\.docx$/i.test(file.name)
     ) {
       const text = await extractDocxText(file)
-      return truncate(text)
+      return truncate(text, maxLength)
+    }
+    if (/\.pptx$/i.test(file.name)) {
+      const text = await extractPptxText(file, options.maxPages)
+      return truncate(text, maxLength)
     }
     // 图片或其他类型：不提取文字
     return null
@@ -40,9 +50,9 @@ export async function extractTextFromFile(file: File): Promise<string | null> {
   }
 }
 
-function truncate(text: string): string {
-  if (text.length <= MAX_EXTRACTED_LENGTH) return text
-  return text.slice(0, MAX_EXTRACTED_LENGTH) + '\n...[内容已截断]'
+function truncate(text: string, maxLength = MAX_EXTRACTED_LENGTH): string {
+  if (text.length <= maxLength) return text
+  return text.slice(0, maxLength) + '\n...[内容已截断]'
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -148,26 +158,24 @@ function buildPageText(items: TextItem[]): string {
   return paragraphTexts.join('\n\n')
 }
 
-async function extractPdfText(file: File): Promise<string> {
+async function extractPdfText(file: File, requestedMaxPages?: number): Promise<string> {
   const pdfjsLib = await import('pdfjs-dist')
   pdfjsLib.GlobalWorkerOptions.workerSrc = './pdf.worker.min.mjs'
 
   const arrayBuffer = await file.arrayBuffer()
   const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise
 
-  const maxPages = Math.min(pdf.numPages, 20) // 上限 20 页（PPT 通常 20-40 张）
+  const maxPages = Math.min(pdf.numPages, requestedMaxPages || 20)
   const pageTexts: string[] = []
 
   for (let i = 1; i <= maxPages; i++) {
     const page = await pdf.getPage(i)
     const content = await page.getTextContent()
     const pageText = buildPageText(content.items as TextItem[])
-    if (pageText.trim()) {
-      pageTexts.push(pageText)
-    }
+    pageTexts.push(`--- Slide ${i} ---\n${pageText.trim() || '[本页未提取到可读文字，可能是图片或空白页]'}`)
   }
 
-  return pageTexts.join('\n\n---\n\n')
+  return pageTexts.join('\n\n')
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -179,4 +187,84 @@ async function extractDocxText(file: File): Promise<string> {
   const arrayBuffer = await file.arrayBuffer()
   const result = await mammoth.extractRawText({ arrayBuffer })
   return result.value
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// PPTX 文字提取（按幻灯片顺序保留页码）
+// ────────────────────────────────────────────────────────────────────────────
+
+async function extractPptxText(file: File, requestedMaxSlides?: number): Promise<string> {
+  return extractPptxTextFromArrayBuffer(await file.arrayBuffer(), requestedMaxSlides)
+}
+
+function decodeXmlText(value: string): string {
+  return value
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, '&')
+    .replace(/&#(\d+);/g, (_match, code) => String.fromCodePoint(Number(code)))
+    .replace(/&#x([\da-f]+);/gi, (_match, code) => String.fromCodePoint(parseInt(code, 16)))
+}
+
+function extractXmlValues(xml: string, tags: string[]): string[] {
+  const pattern = tags.map(tag => tag.replace(':', '\\:')).join('|')
+  return [...xml.matchAll(new RegExp(`<(?:${pattern})(?:\\s[^>]*)?>([\\s\\S]*?)<\\/(?:${pattern})>`, 'gi'))]
+    .map(match => decodeXmlText(match[1]).trim())
+    .filter(Boolean)
+}
+
+function resolvePptxTarget(sourceName: string, target: string): string {
+  const segments = `${sourceName.slice(0, sourceName.lastIndexOf('/') + 1)}${target}`.split('/')
+  const resolved: string[] = []
+  for (const segment of segments) {
+    if (!segment || segment === '.') continue
+    if (segment === '..') resolved.pop()
+    else resolved.push(segment)
+  }
+  return resolved.join('/')
+}
+
+export async function extractPptxTextFromArrayBuffer(arrayBuffer: ArrayBuffer, requestedMaxSlides?: number): Promise<string> {
+  const { default: JSZip } = await import('jszip')
+  const zip = await JSZip.loadAsync(arrayBuffer)
+  const slideNames = Object.keys(zip.files)
+    .filter(name => /^ppt\/slides\/slide\d+\.xml$/i.test(name))
+    .sort((a, b) => Number(a.match(/slide(\d+)\.xml/i)?.[1] || 0) - Number(b.match(/slide(\d+)\.xml/i)?.[1] || 0))
+    .slice(0, requestedMaxSlides || 40)
+  const pages: string[] = []
+  for (const name of slideNames) {
+    const xml = await zip.file(name)?.async('string')
+    if (!xml) continue
+    const lines = extractXmlValues(xml, ['a:t', 'm:t'])
+    const slideNumber = Number(name.match(/slide(\d+)\.xml/i)?.[1] || pages.length + 1)
+    const sections: string[] = []
+    if (lines.length) sections.push(`[幻灯片文字]\n${lines.join('\n')}`)
+
+    const relationName = name.replace('/slides/', '/slides/_rels/') + '.rels'
+    const relationsXml = await zip.file(relationName)?.async('string')
+    if (relationsXml) {
+      const targets = [...relationsXml.matchAll(/<Relationship\b[^>]*\bTarget="([^"]+)"[^>]*>/gi)]
+        .map(match => decodeXmlText(match[1]))
+      const relatedValues: string[] = []
+      const notes: string[] = []
+      for (const target of targets) {
+        const relatedName = resolvePptxTarget(name, target)
+        const relatedXml = await zip.file(relatedName)?.async('string')
+        if (!relatedXml) continue
+        if (/\/notesSlides\//i.test(relatedName)) {
+          notes.push(...extractXmlValues(relatedXml, ['a:t', 'm:t']))
+        } else if (/\/(?:charts|diagrams)\//i.test(relatedName)) {
+          relatedValues.push(...extractXmlValues(relatedXml, ['a:t', 'm:t', 'c:f', 'c:v']))
+        }
+      }
+      const uniqueRelated = [...new Set(relatedValues)].filter(value => !lines.includes(value))
+      const uniqueNotes = [...new Set(notes)].filter(value => !lines.includes(value) && !/^\d+$/.test(value))
+      if (uniqueRelated.length) sections.push(`[图表或关系图中的可识别数据]\n${uniqueRelated.join('\n')}`)
+      if (uniqueNotes.length) sections.push(`[讲者备注]\n${uniqueNotes.join('\n')}`)
+    }
+    pages.push(`--- Slide ${slideNumber} ---\n${sections.join('\n\n') || '[本页未提取到可读文字，可能是图片或空白页]'}`)
+  }
+  return pages.join('\n\n')
 }

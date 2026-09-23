@@ -11,11 +11,16 @@ import { generateId } from '@/lib/utils'
 import * as db from '@/services/supabase'
 import * as sync from '@/services/syncService'
 import * as authService from '@/services/auth.service'
+import { mergeUserProfile } from '@/services/profileRecovery'
+import { recordContinuitySubGoalCompletion, recordContinuityTaskCompletion } from '@/course-engine/service'
+import { calculateGoalProgress, normalizeGoalRelations, toggleGoalSubGoal } from '@/features/goals/domain'
+import { applyGoalTaskFeedback, type GoalTaskFeedback, type GoalTaskAdjustment } from '@/features/goals/planning'
 
 // =====================================================
 // 用户 Store
 // =====================================================
 interface UserState {
+  pendingProfile: Partial<User>
   user: User | null
   isAuthenticated: boolean
   isDemo: boolean
@@ -50,6 +55,7 @@ interface UserState {
 export const useUserStore = create<UserState>()(
   persist(
     (set, get) => ({
+      pendingProfile: {},
       user: null,
       isAuthenticated: false,
       isDemo: false,
@@ -62,7 +68,11 @@ export const useUserStore = create<UserState>()(
         try {
           const user = await sync.initUserData(authId, email, nickname)
           if (user) {
-            set({ user, authChecked: true })
+            // 云端字段在旧账号/迁移未完成时可能为空，不能用空值覆盖本地已保存的资料。
+            const cachedUser = get().user
+            const mergedUser = mergeUserProfile(user, cachedUser, get().pendingProfile)
+            set({ user: mergedUser, authChecked: true })
+            if (Object.keys(get().pendingProfile).length) void get().syncToDb()
           }
         } catch (error) {
           console.error('Error initializing user:', error)
@@ -76,7 +86,9 @@ export const useUserStore = create<UserState>()(
         try {
           const user = await sync.loadUserFromDb(authId)
           if (user) {
-            set({ user, authChecked: true })
+            const cachedUser = get().user
+            const mergedUser = mergeUserProfile(user, cachedUser, get().pendingProfile)
+            set({ user: mergedUser, authChecked: true })
           }
         } catch (error) {
           console.error('Error loading user:', error)
@@ -89,18 +101,21 @@ export const useUserStore = create<UserState>()(
 
       updateUser: (updates) => {
         set((state) => ({
-          user: state.user ? { ...state.user, ...updates } : null
+          user: state.user ? { ...state.user, ...updates } : null,
+          pendingProfile: { ...state.pendingProfile, ...updates },
         }))
         // 异步同步到数据库
         const user = get().user
         if (user && !get().isDemo) {
-          db.updateUserProfile(user.id, updates)
+          void get().syncToDb()
         }
       },
 
       login: () => set({ isAuthenticated: true, isDemo: false, authChecked: true }),
 
       logout: async () => {
+        const current = get()
+        if (current.user) localStorage.setItem(`questmind-account:${current.user.authId || current.user.id}`, JSON.stringify({ user: current.user, pendingProfile: current.pendingProfile, goals: useGoalsStore.getState().goals, chat: useAIChatStore.getState().messages }))
         try {
           await authService.signOut()
         } catch (error) {
@@ -108,11 +123,10 @@ export const useUserStore = create<UserState>()(
         }
         // 清除所有持久化 store，防止账号切换时旧数据残留
         useGoalsStore.getState().setGoals([])
-        useGoalsStore.setState({ currentGoal: null })
         useAIChatStore.getState().clearAllMessages()
         localStorage.removeItem('questmind-goals')
         localStorage.removeItem('questmind-ai-chat')
-        set({ user: null, isAuthenticated: false, isDemo: false, authChecked: true })
+        set({ user: null, pendingProfile: {}, isAuthenticated: false, isDemo: false, authChecked: true })
       },
 
       loginDemo: () => set({
@@ -130,9 +144,8 @@ export const useUserStore = create<UserState>()(
       setAuthChecked: (checked) => set({ authChecked: checked }),
 
       clearAuth: () => {
-        useGoalsStore.getState().setGoals([])
-        useGoalsStore.setState({ currentGoal: null })
-        set({ user: null, isAuthenticated: false, isDemo: false, authChecked: true })
+        // 会话失效只锁定入口，保留本地资料，重新登录同一账号后继续恢复。
+        set({ isAuthenticated: false, isDemo: false, authChecked: true })
       },
 
       syncToDb: async () => {
@@ -140,8 +153,10 @@ export const useUserStore = create<UserState>()(
         if (!user || get().isDemo) return
 
         set({ isSyncing: true })
+        const pending = get().pendingProfile
         try {
-          await sync.syncUserToDb(user)
+          const saved = await sync.syncUserToDb(user)
+          if (saved && get().user?.id === user.id && get().pendingProfile === pending) set({ pendingProfile: {} })
         } finally {
           set({ isSyncing: false })
         }
@@ -151,35 +166,36 @@ export const useUserStore = create<UserState>()(
         const user = get().user
         if (!user || get().isDemo) return false
 
+        // 先落本地，保证网络波动或旧数据库未迁移时，重启仍能保留资料。
+        const updates: Partial<User> = {
+          ...data,
+          timePreference: data.timePreference as User['timePreference'],
+          goalPreferences: data.goalPreferences as User['goalPreferences'],
+          onboardingCompleted: true,
+        }
+        set({ pendingProfile: { ...get().pendingProfile, ...updates }, user: {
+          ...user,
+          nickname: data.nickname,
+          avatar: data.avatar || user.avatar,
+          timePreference: data.timePreference as User['timePreference'],
+          goalPreferences: data.goalPreferences as User['goalPreferences'],
+          onboardingCompleted: true,
+        } })
+
         try {
           // 先尝试正常更新（用户记录已存在的情况）
-          let updatedUser = await db.completeUserOnboarding(user.id, data)
-
-          // 如果更新失败，可能是用户记录还不存在（新注册用户），尝试创建
-          if (!updatedUser && user.email) {
-            console.log('User record not found, creating new one...')
-            updatedUser = await db.createUser({
-              authId: user.id,
-              email: user.email,
-              nickname: data.nickname,
-              avatar: data.avatar,
-            })
-            if (updatedUser) {
-              // 创建成功后再次执行 onboarding 更新
-              updatedUser = await db.completeUserOnboarding(updatedUser.id, data)
-              // 同步 store 中的 user.id 为数据库真实 ID
-              set({ user: { ...updatedUser!, id: updatedUser!.id } })
-            }
-          }
+          const updatedUser = await db.completeUserOnboarding(user.id, data)
 
           if (updatedUser) {
-            set({ user: updatedUser })
+            set({ user: mergeUserProfile(updatedUser, get().user, get().pendingProfile) })
+            void get().syncToDb()
             return true
           }
         } catch (error) {
           console.error('Error completing onboarding:', error)
         }
-        return false
+        // 云端失败不应让用户反复填写；本地资料仍然有效，下次启动再尝试同步。
+        return true
       },
 
       needsOnboarding: () => {
@@ -188,7 +204,9 @@ export const useUserStore = create<UserState>()(
       }
     }),
     {
-      name: 'questmind-user'
+      name: 'questmind-user',
+      partialize: ({ user, isAuthenticated, isDemo, pendingProfile }) => ({ user, isAuthenticated, isDemo, pendingProfile }),
+      merge: (persisted, current) => ({ ...current, ...(persisted as Partial<UserState>), authChecked: false, isLoading: false, isSyncing: false }),
     }
   )
 )
@@ -198,8 +216,8 @@ export const useUserStore = create<UserState>()(
 // =====================================================
 interface GoalsState {
   goals: Goal[]
-  currentGoal: Goal | null
   isLoading: boolean
+  syncError: string | null
 
   // 数据加载
   loadGoals: (userId: string) => Promise<void>
@@ -209,10 +227,11 @@ interface GoalsState {
   addGoal: (goal: Omit<Goal, 'id' | 'userId' | 'createdAt' | 'updatedAt' | 'progress'> & { subGoals?: SubGoal[] }) => Promise<Goal | null>
   updateGoal: (goalId: string, updates: Partial<Goal>) => void
   deleteGoal: (goalId: string) => Promise<void>
-  setCurrentGoal: (goal: Goal | null) => void
+  clearSyncError: () => void
   toggleSubGoal: (goalId: string, subGoalId: string) => Promise<void>
   // 每日任务操作
   toggleDailyTask: (goalId: string, taskId: string) => void
+  applyTaskFeedback: (goalId: string, taskId: string, feedback: GoalTaskFeedback) => Promise<GoalTaskAdjustment | null>
   startDailyTask: (goalId: string, taskId: string) => void
   stopDailyTask: (goalId: string, taskId: string, markCompleted?: boolean) => void
   updateTaskElapsed: (goalId: string, taskId: string, seconds: number) => void
@@ -227,123 +246,143 @@ export const useGoalsStore = create<GoalsState>()(
   persist(
     (set, get) => ({
       goals: [],
-      currentGoal: null,
       isLoading: false,
+      syncError: null,
 
       loadGoals: async (userId) => {
         set({ isLoading: true })
         try {
           const goals = await sync.loadGoalsFromDb(userId)
-          set({ goals })
+          set({ goals, syncError: null })
         } catch (error) {
           console.error('Error loading goals:', error)
+          set({ syncError: '目标加载失败，请检查网络后重试' })
         } finally {
           set({ isLoading: false })
         }
       },
 
-      setGoals: (goals) => set({ goals }),
+      setGoals: (goals) => set({ goals, syncError: null }),
+      clearSyncError: () => set({ syncError: null }),
 
       addGoal: async (goalData) => {
         const user = useUserStore.getState().user
         if (!user) return null
 
+        const isDemo = useUserStore.getState().isDemo
+        const localGoalId = generateId()
+
         // 先更新本地
-        const newGoal: Goal = {
+        const newGoal = normalizeGoalRelations({
           ...goalData,
-          id: generateId(),
+          id: localGoalId,
           userId: user.id,
           progress: 0,
           subGoals: goalData.subGoals || [],
           dailyTasks: goalData.dailyTasks || [],
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()
-        }
+        })
 
         set((state) => ({
           goals: [newGoal, ...state.goals]
         }))
 
+        if (isDemo) return newGoal
+
         // 同步到数据库
         try {
           const dbGoal = await sync.syncGoalToDb(user.id, goalData)
           if (dbGoal) {
-            // 用数据库返回的 ID 更新本地
+            // 以服务端返回的完整聚合替换临时目标，避免子记录继续引用临时 ID。
             set((state) => ({
               goals: state.goals.map((g) =>
-                g.id === newGoal.id ? { ...g, id: dbGoal.id } : g
-              )
+                g.id === newGoal.id ? dbGoal : g
+              ),
+              syncError: null,
             }))
             return dbGoal
           }
+          set({ syncError: '目标已保存在本机，但云端同步失败' })
         } catch (error) {
           console.error('Error syncing goal to DB:', error)
+          set({ syncError: '目标已保存在本机，但云端同步失败' })
         }
 
         return newGoal
       },
 
       updateGoal: (goalId, updates) => {
+        const previousGoal = get().goals.find((goal) => goal.id === goalId)
         set((state) => ({
           goals: state.goals.map((g) =>
             g.id === goalId ? { ...g, ...updates, updatedAt: new Date().toISOString() } : g
-          ),
-          currentGoal: state.currentGoal?.id === goalId
-            ? { ...state.currentGoal, ...updates, updatedAt: new Date().toISOString() }
-            : state.currentGoal
+          )
         }))
 
-        // 同步到数据库
-        sync.updateGoalInDb(goalId, updates)
+        if (!useUserStore.getState().isDemo) {
+          void sync.updateGoalInDb(goalId, updates).then((result) => {
+            if (result) {
+              set({ syncError: null })
+              return
+            }
+            if (!previousGoal) {
+              set({ syncError: '目标修改已保存在本机，但云端同步失败' })
+              return
+            }
+            set((state) => ({
+              goals: state.goals.map((goal) => goal.id === goalId ? previousGoal : goal),
+              syncError: '云端修改失败，已恢复到修改前状态',
+            }))
+          })
+        }
       },
 
       deleteGoal: async (goalId) => {
+        const removedGoal = get().goals.find((goal) => goal.id === goalId)
         set((state) => ({
-          goals: state.goals.filter((g) => g.id !== goalId),
-          currentGoal: state.currentGoal?.id === goalId ? null : state.currentGoal
+          goals: state.goals.filter((g) => g.id !== goalId)
         }))
 
-        // 从数据库删除
-        await sync.deleteGoalInDb(goalId)
+        if (!useUserStore.getState().isDemo) {
+          const deleted = await sync.deleteGoalInDb(goalId)
+          if (!deleted && removedGoal) {
+            set((state) => ({
+              goals: state.goals.some((goal) => goal.id === goalId)
+                ? state.goals
+                : [removedGoal, ...state.goals],
+              syncError: '云端删除失败，目标已恢复',
+            }))
+          }
+        }
       },
-
-      setCurrentGoal: (goal) => set({ currentGoal: goal }),
 
       toggleSubGoal: async (goalId, subGoalId) => {
         const isDemo = useUserStore.getState().isDemo
+        const willComplete = !get().goals.find(goal => goal.id === goalId)?.subGoals.find(subGoal => subGoal.id === subGoalId)?.completed
+        const previousGoal = get().goals.find((goal) => goal.id === goalId)
 
         set((state) => ({
           goals: state.goals.map((g) => {
             if (g.id !== goalId) return g
-            const newSubGoals = g.subGoals.map((sg) =>
-              sg.id === subGoalId
-                ? { ...sg, completed: !sg.completed, completedAt: !sg.completed ? new Date().toISOString() : undefined }
-                : sg
-            )
-            return {
-              ...g,
-              subGoals: newSubGoals,
-              progress: calculateProgress(newSubGoals, subGoalId),
-              updatedAt: new Date().toISOString()
-            }
-          }),
-          currentGoal: state.currentGoal?.id === goalId
-            ? {
-                ...state.currentGoal,
-                subGoals: state.currentGoal.subGoals.map((sg) =>
-                  sg.id === subGoalId
-                    ? { ...sg, completed: !sg.completed, completedAt: !sg.completed ? new Date().toISOString() : undefined }
-                    : sg
-                ),
-                progress: calculateProgress(state.currentGoal.subGoals, subGoalId)
-              }
-            : state.currentGoal
+            return toggleGoalSubGoal(g, subGoalId)
+          })
         }))
 
         // 同步到数据库
         if (!isDemo) {
-          await sync.toggleSubGoalInDb(subGoalId)
+          const synced = await sync.toggleSubGoalInDb(subGoalId)
+          if (synced) {
+            set({ syncError: null })
+          } else if (previousGoal) {
+            set((state) => ({
+              goals: state.goals.map((goal) => goal.id === goalId ? previousGoal : goal),
+              syncError: '子目标状态同步失败，已恢复到修改前状态',
+            }))
+            return
+          }
         }
+        recordContinuitySubGoalCompletion(goalId, subGoalId, willComplete)
       },
 
       addSubGoal: async (goalId, title) => {
@@ -363,39 +402,55 @@ export const useGoalsStore = create<GoalsState>()(
             g.id === goalId
               ? { ...g, subGoals: [...g.subGoals, newSubGoal] }
               : g
-          ),
-          currentGoal: state.currentGoal?.id === goalId
-            ? { ...state.currentGoal, subGoals: [...state.currentGoal.subGoals, newSubGoal] }
-            : state.currentGoal
+          )
         }))
 
         // 同步到数据库
         const isDemo = useUserStore.getState().isDemo
         if (!isDemo) {
-          await sync.addSubGoalToDb(goalId, title)
+          const persisted = await sync.addSubGoalToDb(goalId, title, goal.subGoals.length)
+          if (persisted) {
+            set((state) => ({
+              goals: state.goals.map((item) => item.id === goalId
+                ? { ...item, subGoals: item.subGoals.map((subGoal) => subGoal.id === newSubGoal.id ? persisted : subGoal) }
+                : item),
+              syncError: null,
+            }))
+          } else {
+            set({ syncError: '子目标已保存在本机，但云端同步失败' })
+          }
         }
       },
 
       removeSubGoal: async (goalId, subGoalId) => {
+        const previousGoal = get().goals.find((goal) => goal.id === goalId)
         set((state) => ({
           goals: state.goals.map((g) =>
-            g.id === goalId
-              ? { ...g, subGoals: g.subGoals.filter((sg) => sg.id !== subGoalId) }
-              : g
-          ),
-          currentGoal: state.currentGoal?.id === goalId
-            ? { ...state.currentGoal, subGoals: state.currentGoal.subGoals.filter((sg) => sg.id !== subGoalId) }
-            : state.currentGoal
+            g.id === goalId ? (() => {
+              const subGoals = g.subGoals.filter((sg) => sg.id !== subGoalId)
+              return { ...g, subGoals, progress: calculateGoalProgress(subGoals) }
+            })() : g
+          )
         }))
 
         // 从数据库删除
         const isDemo = useUserStore.getState().isDemo
         if (!isDemo) {
-          await sync.deleteSubGoalInDb(subGoalId)
+          const deleted = await sync.deleteSubGoalInDb(subGoalId)
+          if (deleted) {
+            set({ syncError: null })
+          } else if (previousGoal) {
+            set((state) => ({
+              goals: state.goals.map((goal) => goal.id === goalId ? previousGoal : goal),
+              syncError: '云端删除子目标失败，已恢复到删除前状态',
+            }))
+          }
         }
       },
 
       toggleDailyTask: (goalId, taskId) => {
+        const willComplete = !(get().goals.find(goal => goal.id === goalId)?.dailyTasks || []).find(task => task.id === taskId)?.completed
+        const previousGoal = get().goals.find((goal) => goal.id === goalId)
         set((state) => ({
           goals: state.goals.map((g) => {
             if (g.id !== goalId) return g
@@ -405,23 +460,54 @@ export const useGoalsStore = create<GoalsState>()(
                 : task
             )
             return { ...g, dailyTasks: newTasks }
-          }),
-          currentGoal: state.currentGoal?.id === goalId
-            ? {
-                ...state.currentGoal,
-                dailyTasks: (state.currentGoal.dailyTasks || []).map((task) =>
-                  task.id === taskId
-                    ? { ...task, completed: !task.completed, completedAt: !task.completed ? new Date().toISOString() : undefined, isRunning: false }
-                    : task
-                )
-              }
-            : state.currentGoal
+          })
         }))
         // 同步到数据库
         const isDemo = useUserStore.getState().isDemo
         if (!isDemo) {
-          sync.toggleDailyTaskInDb(taskId)
+          void sync.toggleDailyTaskInDb(taskId).then((synced) => {
+            if (synced) {
+              set({ syncError: null })
+              if (willComplete) recordContinuityTaskCompletion(goalId, taskId, true)
+            } else if (previousGoal) {
+              set((state) => ({
+                goals: state.goals.map((goal) => goal.id === goalId ? previousGoal : goal),
+                syncError: '每日任务状态同步失败，已恢复到修改前状态',
+              }))
+            }
+          })
+        } else if (willComplete) {
+          recordContinuityTaskCompletion(goalId, taskId, true)
         }
+      },
+
+      applyTaskFeedback: async (goalId, taskId, feedback) => {
+        const goal = get().goals.find(item => item.id === goalId)
+        if (!goal) return null
+        const previousGoal = goal
+        let adjustment: GoalTaskAdjustment
+        try {
+          adjustment = applyGoalTaskFeedback(goal, taskId, feedback)
+        } catch (error) {
+          set({ syncError: error instanceof Error ? error.message : '任务调整失败' })
+          return null
+        }
+        set((state) => ({
+          goals: state.goals.map(item => item.id === goalId
+            ? { ...item, dailyTasks: adjustment.tasks, updatedAt: new Date().toISOString() }
+            : item),
+          syncError: null,
+        }))
+        if (!useUserStore.getState().isDemo) {
+          const synced = await sync.updateDailyTasksInDb(adjustment.tasks)
+          if (!synced) {
+            set((state) => ({
+              goals: state.goals.map(item => item.id === goalId ? previousGoal : item),
+              syncError: '计划已在本机调整，但云端同步失败',
+            }))
+          }
+        }
+        return adjustment
       },
 
       // 开始每日任务（启动倒计时）
@@ -433,7 +519,16 @@ export const useGoalsStore = create<GoalsState>()(
             if (g.id !== goalId) return g
             const newTasks = (g.dailyTasks || []).map((task) => {
               if (task.id !== taskId) {
-                return { ...task, isRunning: false }
+                if (!task.isRunning || !task.lastResumedAt) return task
+                const activeSeconds = Math.max(0, Math.floor((Date.now() - task.lastResumedAt) / 1000))
+                return {
+                  ...task,
+                  isRunning: false,
+                  elapsedSeconds: (task.baseElapsed ?? 0) + activeSeconds,
+                  baseElapsed: 0,
+                  startedAt: undefined,
+                  lastResumedAt: undefined,
+                }
               }
               const currentElapsed = task.elapsedSeconds ?? 0
               const previousBase = task.baseElapsed ?? 0
@@ -449,33 +544,18 @@ export const useGoalsStore = create<GoalsState>()(
               }
             })
             return { ...g, dailyTasks: newTasks }
-          }),
-          currentGoal: state.currentGoal?.id === goalId
-            ? {
-                ...state.currentGoal,
-                dailyTasks: (state.currentGoal.dailyTasks || []).map((task) => {
-                  if (task.id !== taskId) {
-                    return { ...task, isRunning: false }
-                  }
-                  const currentElapsed = task.elapsedSeconds ?? 0
-                  const previousBase = task.baseElapsed ?? 0
-                  return {
-                    ...task,
-                    isRunning: true,
-                    startedAt: task.startedAt || new Date().toISOString(),
-                    baseElapsed: previousBase + currentElapsed,
-                    elapsedSeconds: 0,
-                    lastResumedAt: Date.now()
-                  }
-                })
-              }
-            : state.currentGoal
+          })
         }))
       },
 
       // 停止每日任务（暂停或完成）
       // 暂停时：将 baseElapsed + 当前周期时间 合并写入 elapsedSeconds，以便恢复时能正确读取历史累积
       stopDailyTask: (goalId, taskId, markCompleted = false) => {
+        const taskBeforeStop = (get().goals.find(goal => goal.id === goalId)?.dailyTasks || []).find(task => task.id === taskId)
+        const liveSeconds = taskBeforeStop?.isRunning && taskBeforeStop.lastResumedAt
+          ? Math.floor((Date.now() - taskBeforeStop.lastResumedAt) / 1000)
+          : (taskBeforeStop?.elapsedSeconds || 0)
+        const shouldRecordCompletion = Boolean(markCompleted && !taskBeforeStop?.completed && (taskBeforeStop?.baseElapsed || 0) + liveSeconds > 0)
         set((state) => ({
           goals: state.goals.map((g) => {
             if (g.id !== goalId) return g
@@ -503,32 +583,9 @@ export const useGoalsStore = create<GoalsState>()(
               }
             })
             return { ...g, dailyTasks: newTasks }
-          }),
-          currentGoal: state.currentGoal?.id === goalId
-            ? {
-                ...state.currentGoal,
-                dailyTasks: (state.currentGoal.dailyTasks || []).map((task) => {
-                  if (task.id !== taskId) return task
-                  let currentPeriodElapsed = task.elapsedSeconds ?? 0
-                  if (task.isRunning && task.lastResumedAt) {
-                    currentPeriodElapsed = Math.floor((Date.now() - task.lastResumedAt) / 1000)
-                  }
-                  const totalTime = (task.baseElapsed ?? 0) + currentPeriodElapsed
-                  const shouldComplete = markCompleted && totalTime > 0
-                  return {
-                    ...task,
-                    isRunning: false,
-                    elapsedSeconds: totalTime,
-                    startedAt: undefined,
-                    lastResumedAt: undefined,
-                    baseElapsed: 0,
-                    completed: shouldComplete ? true : task.completed,
-                    completedAt: shouldComplete ? new Date().toISOString() : task.completedAt
-                  }
-                })
-              }
-            : state.currentGoal
+          })
         }))
+        if (shouldRecordCompletion) recordContinuityTaskCompletion(goalId, taskId, true)
       },
 
       // 更新任务已用时间
@@ -540,58 +597,56 @@ export const useGoalsStore = create<GoalsState>()(
               task.id === taskId ? { ...task, elapsedSeconds: seconds } : task
             )
             return { ...g, dailyTasks: newTasks }
-          }),
-          currentGoal: state.currentGoal?.id === goalId
-            ? {
-                ...state.currentGoal,
-                dailyTasks: (state.currentGoal.dailyTasks || []).map((task) =>
-                  task.id === taskId ? { ...task, elapsedSeconds: seconds } : task
-                )
-              }
-            : state.currentGoal
+          })
         }))
       },
 
-      // 重置所有每日任务（每天自动调用）
+      // 只重置真正的重复任务。带 dayIndex 的计划任务是一次性日程，不能跨日复活。
       resetDailyTasks: () => {
+        const goalIds = get().goals
+          .filter((goal) => (goal.dailyTasks || []).some((task) => task.frequency === 'daily' && !task.dayIndex))
+          .map((goal) => goal.id)
         set((state) => ({
           goals: state.goals.map((g) => ({
             ...g,
             dailyTasks: (g.dailyTasks || []).map((task) => ({
               ...task,
-              completed: false,
-              completedAt: undefined,
-              isRunning: false,
-              startedAt: undefined,
-              elapsedSeconds: 0
+              ...(task.frequency === 'daily' && !task.dayIndex ? {
+                completed: false,
+                completedAt: undefined,
+                isRunning: false,
+                startedAt: undefined,
+                elapsedSeconds: 0,
+                lastResumedAt: undefined,
+                baseElapsed: 0,
+              } : {}),
             }))
-          })),
-          currentGoal: state.currentGoal ? {
-            ...state.currentGoal,
-            dailyTasks: (state.currentGoal.dailyTasks || []).map((task) => ({
-              ...task,
-              completed: false,
-              completedAt: undefined,
-              isRunning: false,
-              startedAt: undefined,
-              elapsedSeconds: 0
-            }))
-          } : null
+          }))
         }))
+
+        if (!useUserStore.getState().isDemo && goalIds.length > 0) {
+          void Promise.all(goalIds.map((goalId) => sync.resetDailyTasksInDb(goalId))).then((results) => {
+            if (results.every(Boolean)) {
+              set({ syncError: null })
+            } else {
+              set({ syncError: '每日任务已在本机重置，但部分云端同步失败' })
+            }
+          })
+        }
       }
     }),
     {
-      name: 'questmind-goals'
+      name: 'questmind-goals',
+      merge: (persisted, current) => {
+        const saved = persisted as Partial<GoalsState> | undefined
+        return {
+          ...current,
+          goals: Array.isArray(saved?.goals) ? saved.goals : current.goals,
+        }
+      },
     }
   )
 )
-
-function calculateProgress(subGoals: Goal['subGoals'], toggledId: string): number {
-  const completed = subGoals.filter((sg) =>
-    sg.id === toggledId ? !sg.completed : sg.completed
-  ).length
-  return subGoals.length > 0 ? Math.round((completed / subGoals.length) * 100) : 0
-}
 
 // =====================================================
 // AI 聊天 Store

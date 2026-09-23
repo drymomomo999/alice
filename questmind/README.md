@@ -31,12 +31,12 @@
 
 ## 🛠️ 技术栈
 
-- **前端框架**: React 18 + TypeScript
+- **前端框架**: React 19 + TypeScript
 - **构建工具**: Vite
 - **样式**: Tailwind CSS + shadcn/ui
 - **状态管理**: Zustand
 - **路由**: React Router DOM
-- **后端**: Firebase Auth + Supabase
+- **后端与认证**: Supabase
 - **AI**: DeepSeek API
 
 ## 🚀 快速开始
@@ -64,6 +64,17 @@ cp .env.example .env
 2. 复制 `Project URL` 和 `anon public key` 到 `.env`
 3. 在 SQL Editor 中执行 `supabase/schema.sql` 创建所有表
 
+项目已内置 Supabase CLI 包装命令，CLI 的本地状态会写入项目内的 `.supabase-cli-home/`，避免污染全局用户目录：
+
+```bash
+npm run supabase -- --version
+npm run supabase:login
+npm run supabase -- link --project-ref njecytkavzhrmlgzwwkm
+npm run supabase:status
+```
+
+登录时请在本机终端粘贴 Supabase access token，不要把 token 写进聊天或提交到仓库。
+
 ### 4. 启动开发服务器
 
 ```bash
@@ -75,6 +86,26 @@ npm run dev
 ```bash
 npm run build
 ```
+
+## 🧪 对外内测发布
+
+发布给 Windows 测试用户前先执行完整检查并生成 NSIS 安装包：
+
+```powershell
+npm run test:beta-release
+npm run test:beta-backend
+npm run tauri:build:beta
+npm run supabase:db:push
+npm run supabase:functions:deploy:alice-share
+```
+
+安装包位于 `src-tauri/target/release/bundle/nsis/`。发送安装包时同时计算并提供 SHA-256：
+
+```powershell
+Get-FileHash .\src-tauri\target\release\bundle\nsis\QuestMind_0.1.0_x64-setup.exe -Algorithm SHA256
+```
+
+测试范围、已知限制和反馈格式见 [Windows 内测指南](docs/BETA_TEST_GUIDE.md)。开发者配置见 [桌面 App 指南](DESKTOP-APP-SETUP.md)。
 
 ## 📁 项目结构
 

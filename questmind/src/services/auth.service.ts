@@ -9,6 +9,7 @@ import { initUserData as initializeUserData } from './syncService';
 
 export interface AuthResult {
   success: boolean;
+  needsEmailConfirmation?: boolean;
   user?: {
     id: string;
     email?: string;
@@ -74,12 +75,20 @@ export async function signUpWithEmail(
     }
 
     if (data.user) {
-      // 初始化用户数据
-      await initializeUserData(
-        data.user.id,
-        data.user.email || '',
-        nickname || '学习新手'
-      );
+      // 开启邮箱确认时注册后尚无 session，不能提前写入受 RLS 保护的用户表。
+      if (!data.session) {
+        return {
+          success: true,
+          needsEmailConfirmation: true,
+          user: {
+            id: data.user.id,
+            email: data.user.email || undefined,
+            nickname: nickname || '学习新手',
+          },
+        };
+      }
+
+      await initializeUserData(data.user.id, data.user.email || '', nickname || '学习新手');
 
       return {
         success: true,

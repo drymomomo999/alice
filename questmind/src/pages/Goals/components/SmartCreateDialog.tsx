@@ -1,8 +1,8 @@
 /**
  * AI 智能创建目标对话框（支持附件上传）
  */
-import { useState, useRef } from 'react'
-import { CheckCircle2, ArrowRight, Upload, Loader2, X } from 'lucide-react'
+import { useMemo, useState, useRef } from 'react'
+import { AlertTriangle, CheckCircle2, ArrowRight, Upload, Loader2, Trash2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
@@ -11,10 +11,22 @@ import { cn } from '@/lib/utils'
 import { uploadGoalAttachment, isAcceptableFileType, getAttachmentType, formatFileSize } from '@/services/supabase'
 import { extractTextFromFile } from '@/lib/fileExtractor'
 import { classifyGoalAttachment } from '@/course-engine/service'
+import { auditGoalPlan } from '@/features/goals/planning'
 import { generateId } from '@/lib/utils'
-import type { GoalAttachment } from '@/types'
+import type { GoalAttachment, GoalCategory } from '@/types'
 import type { GoalPlanResult } from '@/services/ai.service'
 import AliceCharacter from '@/assets/alice-character.png'
+
+const categoryOptions: { value: GoalCategory; label: string }[] = [
+  { value: 'study', label: '课程学习' },
+  { value: 'exam', label: '考试备考' },
+  { value: 'language', label: '语言学习' },
+  { value: 'skill', label: '技能训练' },
+  { value: 'reading', label: '阅读' },
+  { value: 'fitness', label: '健身' },
+  { value: 'career', label: '职业发展' },
+  { value: 'other', label: '其他' },
+]
 
 type AIWizardStep = 'goal' | 'status' | 'plan'
 
@@ -23,6 +35,8 @@ interface AIWizardState {
   goalTitle: string
   goalContext: string
   attachments: GoalAttachment[]
+  goalCategory?: GoalCategory
+  extractedInfo?: Record<string, string>
   questions: string[]
   statusAnswers: string[]
   planResult: GoalPlanResult | null
@@ -47,6 +61,27 @@ export function SmartCreateDialog({
   const [isUploading, setIsUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const planIssues = useMemo(
+    () => wizardState.planResult
+      ? auditGoalPlan(wizardState.planResult, wizardState.attachments.some(item => item.type === 'document' && Boolean(item.extractedText)))
+      : [],
+    [wizardState.planResult, wizardState.attachments],
+  )
+  const hasBlockingPlanIssue = planIssues.some(issue => issue.severity === 'error')
+
+  const updatePlanTask = (index: number, updates: Partial<GoalPlanResult['dailyTasks'][number]>) => {
+    setWizardState(prev => {
+      if (!prev.planResult) return prev
+      const dailyTasks = prev.planResult.dailyTasks.map((task, taskIndex) => taskIndex === index ? { ...task, ...updates } : task)
+      return { ...prev, planResult: { ...prev.planResult, dailyTasks } }
+    })
+  }
+
+  const removePlanTask = (index: number) => {
+    setWizardState(prev => prev.planResult
+      ? { ...prev, planResult: { ...prev.planResult, dailyTasks: prev.planResult.dailyTasks.filter((_, taskIndex) => taskIndex !== index) } }
+      : prev)
+  }
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files) return
@@ -298,6 +333,39 @@ export function SmartCreateDialog({
                     </div>
                   </div>
                 )}
+                <div className="grid grid-cols-3 gap-2">
+                  <label className="text-xs text-muted-foreground">
+                    目标类型
+                    <select className="mt-1 h-9 w-full rounded-xl border bg-background px-2 text-xs"
+                      value={wizardState.goalCategory || 'other'}
+                      onChange={(event) => setWizardState(prev => ({ ...prev, goalCategory: event.target.value as GoalCategory }))}>
+                      {categoryOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                    </select>
+                  </label>
+                  <label className="text-xs text-muted-foreground">
+                    总计划天数
+                    <Input type="number" min={1} max={3650} className="mt-1 h-9 rounded-xl"
+                      value={wizardState.planResult.totalDays || 30}
+                      onChange={(event) => setWizardState(prev => prev.planResult ? ({ ...prev, planResult: { ...prev.planResult, totalDays: Math.max(1, Number(event.target.value) || 1) } }) : prev)} />
+                  </label>
+                  <label className="text-xs text-muted-foreground">
+                    每日时间预算（分钟）
+                    <Input type="number" min={5} max={1440} className="mt-1 h-9 rounded-xl"
+                      value={wizardState.planResult.dailyTimeMinutes || 45}
+                      onChange={(event) => setWizardState(prev => prev.planResult ? ({ ...prev, planResult: { ...prev.planResult, dailyTimeMinutes: Math.max(5, Number(event.target.value) || 5) } }) : prev)} />
+                  </label>
+                </div>
+                {planIssues.length > 0 && (
+                  <div className={cn('p-3 rounded-xl border', hasBlockingPlanIssue ? 'bg-red-50 border-red-200' : 'bg-amber-50 border-amber-200')}>
+                    <div className="flex items-center gap-1.5 text-xs font-semibold mb-1.5">
+                      <AlertTriangle className="w-3.5 h-3.5" />
+                      计划校验发现 {planIssues.length} 个需要注意的地方
+                    </div>
+                    <ul className="space-y-1 text-[11px] text-muted-foreground">
+                      {planIssues.map((issue, index) => <li key={`${issue.message}-${index}`}>• {issue.message}</li>)}
+                    </ul>
+                  </div>
+                )}
                 {wizardState.attachments.length > 0 && (
                   <div className="p-3 rounded-xl bg-sakura-pale/20 border border-sakura-light/30">
                     <p className="text-xs text-muted-foreground mb-1">已上传的参考资料</p>
@@ -316,6 +384,36 @@ export function SmartCreateDialog({
                         <Badge variant="outline" className="ml-auto text-xs">{sg.estimatedTime}</Badge>
                       </div>
                       <p className="text-xs text-muted-foreground mt-1 ml-8">{sg.action}</p>
+                    </div>
+                  ))}
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-semibold">📅 每日执行任务</p>
+                    <span className="text-[10px] text-muted-foreground">可以在确认前直接修改</span>
+                  </div>
+                  {wizardState.planResult.dailyTasks.map((task, idx) => (
+                    <div key={idx} className="grid grid-cols-[64px_1fr_72px_30px] items-end gap-2 p-2.5 rounded-xl border border-sakura-light/30 bg-white">
+                      <label className="text-[10px] text-muted-foreground">
+                        第几天
+                        <Input type="number" min={1} max={wizardState.planResult?.totalDays || 3650}
+                          value={task.dayIndex || 1} className="mt-1 h-8 rounded-lg px-2"
+                          onChange={(event) => updatePlanTask(idx, { dayIndex: Math.max(1, Number(event.target.value) || 1) })} />
+                      </label>
+                      <label className="text-[10px] text-muted-foreground min-w-0">
+                        任务内容
+                        <Input value={task.title} className="mt-1 h-8 rounded-lg"
+                          onChange={(event) => updatePlanTask(idx, { title: event.target.value })} />
+                      </label>
+                      <label className="text-[10px] text-muted-foreground">
+                        分钟
+                        <Input type="number" min={5} max={240} value={task.duration}
+                          className="mt-1 h-8 rounded-lg px-2"
+                          onChange={(event) => updatePlanTask(idx, { duration: Math.max(5, Number(event.target.value) || 5) })} />
+                      </label>
+                      <button onClick={() => removePlanTask(idx)} className="h-8 rounded-lg text-red-300 hover:text-red-500 hover:bg-red-50" title="删除任务">
+                        <Trash2 className="w-3.5 h-3.5 mx-auto" />
+                      </button>
                     </div>
                   ))}
                 </div>
@@ -352,7 +450,7 @@ export function SmartCreateDialog({
             className="rounded-xl bg-gradient-to-r from-sakura-pink to-peach-orange text-white border-0">开始规划 <ArrowRight className="w-4 h-4 ml-2" /></Button>}
           {wizardState.step === 'status' && <Button onClick={onSubmitStatus} disabled={wizardState.statusAnswers.some(a => !a.trim())}
             className="rounded-xl bg-gradient-to-r from-sakura-pink to-peach-orange text-white border-0">生成计划 <ArrowRight className="w-4 h-4 ml-2" /></Button>}
-          {wizardState.step === 'plan' && <Button onClick={onConfirmAndCreate}
+          {wizardState.step === 'plan' && <Button onClick={onConfirmAndCreate} disabled={hasBlockingPlanIssue}
             className="rounded-xl bg-gradient-to-r from-sakura-pink to-peach-orange text-white border-0"><CheckCircle2 className="w-4 h-4 mr-2" />确认并开始执行</Button>}
         </DialogFooter>
       </DialogContent>

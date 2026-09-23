@@ -6,6 +6,7 @@ export type GoalCategory = 'study' | 'fitness' | 'reading' | 'exam' | 'career' |
 
 export interface User {
   id: string
+  authId?: string
   email?: string
   nickname: string
   avatar?: string
@@ -98,6 +99,11 @@ export interface DailyTask {
   difficultyLevel?: 'easy' | 'medium' | 'hard'  // 任务难度
   resourceReference?: string  // 引用的参考资料位置（如"教材第3章P45-P62"）
   checklist?: string[]       // 执行步骤清单
+  // 执行反馈与自适应调整
+  originalDayIndex?: number  // 首次生成时的日期，用于解释后续调整
+  lastFeedback?: 'too_hard' | 'no_time' | 'already_know' | 'blocked'
+  lastFeedbackAt?: string
+  adaptationNote?: string    // 用户可见的调整原因
   // 倒计时相关字段
   startedAt?: string      // 任务开始时间（ISO 字符串）
   elapsedSeconds?: number // 当前运行周期已用时间（秒），每次 resume 重置

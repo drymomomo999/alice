@@ -30,6 +30,7 @@ export const en = {
   nav: {
     home: 'Home',
     goals: 'Goals',
+    courseware: 'Study',
     room: 'Room',
     profile: 'Profile',
     settings: 'Settings',

@@ -5,17 +5,18 @@
  * Android WebView 不支持 iframe 内 PDF，此组件提供跨平台一致的 PDF 阅读体验。
  */
 import { useState, useEffect, useRef, useCallback } from 'react'
+import type { PDFDocumentLoadingTask, PDFDocumentProxy } from 'pdfjs-dist'
 import { ChevronLeft, ChevronRight, Loader2, FileText, ZoomIn, ZoomOut } from 'lucide-react'
 
 interface PdfPageRendererProps {
-  /** PDF 文件的 blob URL 或远程 URL */
-  pdfUrl: string | null
+  /** PDF 文件字节。直接交给 PDF.js，避免 Tauri WebView 二次请求 blob URL。 */
+  pdfData: Uint8Array<ArrayBuffer> | null
   /** PDF 文件名（显示用） */
   fileName?: string
 }
 
-export function PdfPageRenderer({ pdfUrl, fileName = '文档' }: PdfPageRendererProps) {
-  const [pdfDoc, setPdfDoc] = useState<any>(null)
+export function PdfPageRenderer({ pdfData, fileName = '文档' }: PdfPageRendererProps) {
+  const [pdfDoc, setPdfDoc] = useState<PDFDocumentProxy | null>(null)
   const [numPages, setNumPages] = useState(0)
   const [currentPage, setCurrentPage] = useState(1)
   const [scale, setScale] = useState(1.2)
@@ -35,7 +36,7 @@ export function PdfPageRenderer({ pdfUrl, fileName = '文档' }: PdfPageRenderer
 
   // 加载 PDF 文档
   useEffect(() => {
-    if (!pdfUrl) {
+    if (!pdfData) {
       setPdfDoc(null)
       setNumPages(0)
       setCurrentPage(1)
@@ -45,18 +46,22 @@ export function PdfPageRenderer({ pdfUrl, fileName = '文档' }: PdfPageRenderer
     }
 
     let cancelled = false
+    let loadingTask: PDFDocumentLoadingTask | null = null
     const loadPdf = async () => {
       setLoading(true)
       setError(null)
       setRenderError(null)
       try {
         const pdfjsLib = await import('pdfjs-dist')
-        const pdf = await pdfjsLib.getDocument({
-          url: pdfUrl,
+        // PDF.js 会把传入的 TypedArray 转移给 worker，使其 ArrayBuffer detached。
+        // 这里使用副本，既保留 React state 中的原始字节，也兼容 StrictMode 的 effect 重跑。
+        loadingTask = pdfjsLib.getDocument({
+          data: pdfData.slice(),
           cMapUrl: undefined,
           cMapPacked: false,
           standardFontDataUrl: undefined,
-        }).promise
+        })
+        const pdf = await loadingTask.promise
 
         if (cancelled) return
         setPdfDoc(pdf)
@@ -72,8 +77,13 @@ export function PdfPageRenderer({ pdfUrl, fileName = '文档' }: PdfPageRenderer
     }
     loadPdf()
 
-    return () => { cancelled = true }
-  }, [pdfUrl])
+    return () => {
+      cancelled = true
+      if (loadingTask && !loadingTask.destroyed) {
+        void loadingTask.destroy()
+      }
+    }
+  }, [pdfData])
 
   // 自适应 scale：根据容器宽度计算最佳缩放
   useEffect(() => {
@@ -113,7 +123,7 @@ export function PdfPageRenderer({ pdfUrl, fileName = '文档' }: PdfPageRenderer
       canvas.style.height = `${viewport.height}px`
       ctx.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0)
 
-      await page.render({ canvasContext: ctx, viewport }).promise
+      await page.render({ canvas, canvasContext: ctx, viewport }).promise
     } catch (e) {
       console.error('[PdfPageRenderer] 渲染失败:', e)
       setRenderError('页面渲染失败')
@@ -139,7 +149,7 @@ export function PdfPageRenderer({ pdfUrl, fileName = '文档' }: PdfPageRenderer
   // 状态：无 URL / 加载中 / 错误 / 正常
   // ============================================================
 
-  if (!pdfUrl) {
+  if (!pdfData) {
     return (
       <div className="flex flex-col items-center justify-center h-full gap-4">
         <div className="w-14 h-14 rounded-2xl bg-sakura/10 flex items-center justify-center">

@@ -203,7 +203,7 @@ export function getAliceRoomPromptWithMemory(
 ): string {
   let prompt = `${ALICE_ROOM_PROMPT}\n\n${ALICE_HOME_SCENE_POLICY}`
 
-  // 注入当前时间 —— 让艾莉丝有现实时间感，配合历史消息里的时间标记，能区分不同时段说过的话
+  // 注入当前时间 —— 仅供艾莉丝在内部判断当前时段，不展示为对话时间戳
   prompt += `\n\n【当前时间】${getCurrentTimeContext()}`
 
   // 注入用户名

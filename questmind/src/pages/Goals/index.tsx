@@ -3,11 +3,14 @@
  *
  * 三栏布局：左栏(目标列表) + 中栏(目标详情+AI学习指南) + 右栏(艾莉丝聊天)
  */
-import { useState, useRef, useEffect } from 'react'
+import { useState } from 'react'
 import { useGoalsStore } from '@/store'
 import { generateId, cn } from '@/lib/utils'
 import { generateStatusQuestions, generateGoalPlan, generateQuizQuestions, buildGoalContextString, type GoalPlanResult } from '@/services/ai.service'
+import { analyzeGoalCourse, projectContinuityPlanToGoal } from '@/course-engine/service'
+import { auditGoalPlan, normalizeGoalPlan } from '@/features/goals/planning'
 import { useIsMobile } from '@/hooks/useIsMobile'
+import { useGoalRuntime } from '@/features/goals/useGoalRuntime'
 import type { GoalPriority, GoalCategory, DailyTask, GoalAttachment, QuizQuestion } from '@/types'
 
 // 拆分后的子组件
@@ -64,9 +67,9 @@ function getSubjectFallbackQuestions(topic: string): QuizQuestion[] {
       {
         id: 'f5',
         question: '关于无差异曲线的性质，以下说法错误的是：',
-        options: ['同一消费者的无差异曲线不相交', '无差异曲线向右下方倾斜', '距原点越远的无差异曲线代表效用水平越高', '无差异曲线可以是直线（完全替代品时）'],
+        options: ['同一消费者的无差异曲线不相交', '无差异曲线向右下方倾斜', '距原点越远的无差异曲线代表效用水平越高', '无差异曲线在任何偏好下都一定是直线'],
         correctIndex: 3,
-        explanation: 'A、B、C都是无差异曲线的正确性质。D也是正确的：完全替代品的无差异曲线是直线（MRS为常数）。因此本题考查的是找出"错误"说法，但四项都正确——本题实际想考查D的特殊情况属于无差异曲线的合法形态，并非错误。',
+        explanation: '无差异曲线的形状取决于偏好；完全替代品时可以是直线，但不能说任何偏好下都一定是直线。',
         difficulty: 'hard',
       },
     ]
@@ -261,25 +264,8 @@ function getSubjectFallbackQuestions(topic: string): QuizQuestion[] {
     ]
   }
 
-  // 通用兜底（非自我评估）
-  return [
-    {
-      id: 'f1',
-      question: `"${topic}"中提到的核心概念，以下哪项描述最准确？`,
-      options: ['这是该领域的基础理论之一，贯穿后续所有内容', '这是一个可选了解的边缘概念', '这已经被现代研究完全否定', '这仅适用于极特殊的边界情况'],
-      correctIndex: 0,
-      explanation: '核心概念通常是学科的基础理论，后续内容都建立在其之上，必须牢固掌握。',
-      difficulty: 'easy',
-    },
-    {
-      id: 'f2',
-      question: '在学习该主题时，以下哪种做法最有助于加深理解？',
-      options: ['只阅读教材定义，不做任何练习', '结合具体例子和练习题来应用概念', '等待考试前一周再集中记忆', '只看视频讲解，不自己动笔'],
-      correctIndex: 1,
-      explanation: '主动学习和应用（通过例子和练习）是掌握知识的最有效方式，被动阅读或临时抱佛脚效果较差。',
-      difficulty: 'easy',
-    },
-  ]
+  // 未知主题不能伪造“看起来像测验”的通用题。
+  return []
 }
 
 // ============================================================
@@ -367,13 +353,13 @@ export function GoalsPage() {
   const {
     goals, addGoal, updateGoal, deleteGoal,
     toggleSubGoal, resetDailyTasks,
-    stopDailyTask,
+    stopDailyTask, syncError, clearSyncError,
   } = useGoalsStore()
 
   // State
   const [selectedGoalId, setSelectedGoalId] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
-  const [goalsVersion, setGoalsVersion] = useState(0)
+  const goalsVersion = useGoalRuntime({ goals, stopDailyTask, resetDailyTasks })
 
   // Dialog
   const [showNewGoalDialog, setShowNewGoalDialog] = useState(false)
@@ -427,45 +413,8 @@ export function GoalsPage() {
   const [finalExamOpen, setFinalExamOpen] = useState(false)
   const [finalExamGoalId, setFinalExamGoalId] = useState<string | null>(null)
 
-  // Refs
-  const goalsRef = useRef(goals)
-  goalsRef.current = goals
-
   // Selected goal
   const selectedGoal = goals.find(g => g.id === selectedGoalId) || null
-
-  // Timer tick — 每秒刷新运行中任务的显示时间
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setGoalsVersion(v => v + 1)
-      const currentGoals = goalsRef.current
-      currentGoals.forEach(goal => {
-        goal.dailyTasks?.forEach(task => {
-          if (task.isRunning && task.lastResumedAt && task.duration) {
-            const base = task.baseElapsed ?? 0
-            const current = Math.floor((Date.now() - task.lastResumedAt) / 1000)
-            const totalElapsed = base + current
-            if (totalElapsed >= task.duration * 60) {
-              stopDailyTask(goal.id, task.id, true)
-            }
-          }
-        })
-      })
-    }, 1000)
-    return () => clearInterval(timer)
-  }, [stopDailyTask])
-
-  // Daily reset
-  useEffect(() => {
-    const check = () => {
-      const last = localStorage.getItem('lastDailyTasksReset')
-      const today = new Date().toDateString()
-      if (last !== today) { resetDailyTasks(); localStorage.setItem('lastDailyTasksReset', today) }
-    }
-    check()
-    const t = setInterval(check, 3600000)
-    return () => clearInterval(t)
-  }, [resetDailyTasks])
 
   // Handlers
   const handleStartQuiz = async (goalId: string, subGoalId: string, subGoalTitle: string) => {
@@ -478,8 +427,8 @@ export function GoalsPage() {
       const goal = goals.find(g => g.id === goalId) || null
       const goalContext = goal ? buildGoalContextString(goal) : ''
       const raw = await generateQuizQuestions({ topic: subGoalTitle, difficulty: 'easy', count: 5, goalContext, goalCategory: goal?.category })
-      const parsed = JSON.parse(raw)
-      const questions: QuizQuestion[] = (parsed.questions || []).map((q: any, i: number) => ({
+      const parsed = JSON.parse(raw) as { questions?: QuizQuestion[] }
+      const questions: QuizQuestion[] = (parsed.questions || []).map((q, i: number) => ({
         id: q.id || `q${i}`,
         question: q.question,
         options: q.options,
@@ -492,7 +441,12 @@ export function GoalsPage() {
     } catch {
       // Fallback：当AI服务不可用时，根据子目标标题提供有实质知识点的硬编码题目，杜绝自我评估题
       const fallbackQuestions = getSubjectFallbackQuestions(subGoalTitle)
-      setQuizState(prev => ({ ...prev, questions: fallbackQuestions, isLoading: false }))
+      setQuizState(prev => ({
+        ...prev,
+        questions: fallbackQuestions,
+        isLoading: false,
+        error: fallbackQuestions.length > 0 ? null : '当前无法生成可靠题目，请稍后重试。你的子目标状态不会被修改。',
+      }))
     }
   }
 
@@ -524,11 +478,11 @@ export function GoalsPage() {
     setFinalExamOpen(true)
   }
 
-  const handleCreateGoal = () => {    if (!newGoal.title || !newGoal.endDate) return
+  const handleCreateGoal = async () => {    if (!newGoal.title || !newGoal.endDate) return
     const subGoals = newGoal.subGoals.filter(sg => sg.title.trim()).map(sg => ({
       id: generateId(), goalId: '', title: sg.title, completed: false,
     }))
-    addGoal({
+    const createdGoal = await addGoal({
       title: newGoal.title, description: newGoal.description,
       context: newGoal.context || undefined,
       attachments: newGoal.attachments,
@@ -537,6 +491,11 @@ export function GoalsPage() {
       endDate: new Date(newGoal.endDate).toISOString(),
       subGoals, category: newGoal.category,
     })
+    if (createdGoal && newGoal.attachments.some(attachment => attachment.type === 'document' && attachment.extractedText)) {
+      const sourceGoal = { ...createdGoal, attachments: newGoal.attachments }
+      const courseModel = analyzeGoalCourse(sourceGoal, createdGoal.userId || 'local-user')
+      updateGoal(createdGoal.id, projectContinuityPlanToGoal(courseModel, sourceGoal))
+    }
     setNewGoal({ title: '', description: '', context: '', category: 'study', priority: 'medium', endDate: '', subGoals: [{ title: '' }], attachments: [] })
     setShowNewGoalDialog(false)
   }
@@ -596,9 +555,9 @@ export function GoalsPage() {
         wizardState.extractedInfo,
       )
       setWizardState(prev => ({ ...prev, step: 'plan', planResult: result, isLoading: false }))
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('[SmartCreate] 生成计划失败:', err)
-      const msg = err?.message || String(err)
+      const msg = err instanceof Error ? err.message : String(err)
       // 如果错误信息包含 JSON 或 token/截断等关键词，给出更具体的提示
       const isTruncated = msg.includes('JSON') || msg.includes('Unexpected') || msg.includes('token')
       setWizardState(prev => ({
@@ -613,24 +572,40 @@ export function GoalsPage() {
 
   const handleConfirmAndCreateGoal = async () => {
     if (!wizardState.planResult) return
+    let checkedPlan: GoalPlanResult
+    try {
+      checkedPlan = normalizeGoalPlan(wizardState.planResult)
+      const blockingIssues = auditGoalPlan(
+        checkedPlan,
+        wizardState.attachments.some(item => item.type === 'document' && Boolean(item.extractedText)),
+      ).filter(issue => issue.severity === 'error')
+      if (blockingIssues.length > 0) {
+        setWizardState(prev => ({ ...prev, error: blockingIssues[0].message }))
+        return
+      }
+    } catch (error) {
+      setWizardState(prev => ({ ...prev, error: error instanceof Error ? error.message : '计划校验失败，请修改后重试' }))
+      return
+    }
     // Bug 修复：endDate 从标题提取时间约束作为首选，不再完全依赖 AI 返回的 totalDays
     const titleExtractedDays = extractDaysFromTitle(wizardState.goalTitle, wizardState.goalContext)
-    const totalDays = titleExtractedDays ?? wizardState.planResult.totalDays ?? 30
+    const totalDays = titleExtractedDays ?? checkedPlan.totalDays ?? 30
     const endDate = new Date(); endDate.setDate(endDate.getDate() + totalDays)
     // Step 5: 写入所有 AI 增强字段（dayIndex / subGoalIndex / difficultyLevel / resourceReference / checklist）
-    const subGoals = wizardState.planResult.subGoals.map(sg => ({
+    const subGoals = checkedPlan.subGoals.map(sg => ({
       id: generateId(), goalId: '',
       title: sg.title, completed: false,
       // 额外字段（description / dayRange）通过其他方式存储，或暂时记录在 description 中
       ...(sg.description ? { description: sg.description } : {}),
       ...(sg.dayRange ? { dayRange: sg.dayRange } : {}),
     }))
-    const dailyTasks: DailyTask[] = wizardState.planResult.dailyTasks.map((task, idx) => ({
+    const dailyTasks: DailyTask[] = checkedPlan.dailyTasks.map((task, idx) => ({
       id: generateId(), goalId: '',
       title: task.title,
       description: task.description,
       duration: task.duration,
-      frequency: task.frequency,
+      // AI 计划中的 dayIndex 表示一次性日程，不是每天重复任务。
+      frequency: 'custom',
       completed: false, orderIndex: idx,
       // Step 5 新增字段
       dayIndex: task.dayIndex,
@@ -639,15 +614,21 @@ export function GoalsPage() {
       resourceReference: task.resourceReference,
       checklist: task.checklist,
     }))
-    await addGoal({
+    const createdGoal = await addGoal({
       title: wizardState.goalTitle,
-      description: `当前状态：${wizardState.planResult.currentStatus}`,
+      description: `当前状态：${checkedPlan.currentStatus}`,
       context: wizardState.goalContext || undefined,
       attachments: wizardState.attachments.length > 0 ? wizardState.attachments : undefined,
       status: 'active', priority: 'medium' as GoalPriority,
+      category: wizardState.goalCategory || 'other',
       startDate: new Date().toISOString(), endDate: endDate.toISOString(),
-      subGoals, currentStatus: wizardState.planResult.currentStatus, dailyTasks,
+      subGoals, currentStatus: checkedPlan.currentStatus, dailyTasks,
     })
+    if (createdGoal && wizardState.attachments.some(attachment => attachment.type === 'document' && attachment.extractedText)) {
+      const sourceGoal = { ...createdGoal, attachments: wizardState.attachments, subGoals, dailyTasks }
+      const courseModel = analyzeGoalCourse(sourceGoal, createdGoal.userId || 'local-user')
+      updateGoal(createdGoal.id, projectContinuityPlanToGoal(courseModel, sourceGoal))
+    }
     setShowSmartCreateDialog(false)
     setWizardState({ step: 'goal', goalTitle: '', goalContext: '', attachments: [], questions: [], statusAnswers: [], planResult: null, isLoading: false, error: null })
   }
@@ -672,6 +653,16 @@ export function GoalsPage() {
   // ============================================================
   return (
     <>
+      {syncError && (
+        <div
+          role="alert"
+          className="fixed right-5 top-5 z-[100] flex max-w-sm items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950 shadow-lg"
+        >
+          <span className="mt-0.5" aria-hidden="true">⚠️</span>
+          <span className="flex-1">{syncError}</span>
+          <button type="button" onClick={clearSyncError} className="text-amber-700 hover:text-amber-950" aria-label="关闭同步提示">×</button>
+        </div>
+      )}
       {isMobile ? (
         /* ========== 移动端单栏布局 ========== */
         <div className="h-[calc(100vh-7.5rem)] flex flex-col animate-in">

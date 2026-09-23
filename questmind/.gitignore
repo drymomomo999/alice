@@ -15,6 +15,7 @@ yarn-error.log
 # Build output
 dist
 dist-ssr
+dist_old_*/
 src-tauri/target/
 *.local
 *.apk
@@ -27,6 +28,7 @@ android/capacitor-cordova-android-plugins/build/
 android/local.properties
 
 # Dev output logs
+node.*.log
 dev-output.txt
 dev-output.txt.error
 dev-server-output.txt
@@ -38,9 +40,10 @@ vite-node-output.txt.error
 
 # Supabase local development files
 supabase/.temp
-supabase/config.toml
 supabase/.branches
 supabase/.phases
+.supabase-cli-home/
+.npm-cache/
 
 # Build cache
 .tsbuildinfo
@@ -52,6 +55,8 @@ __pycache__/
 
 # Temp files
 .codex_py/
+.codex-finalizer/
+.ppt-build/
 
 # Editor directories and files
 .vscode/*

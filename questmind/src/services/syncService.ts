@@ -4,7 +4,7 @@
  */
 
 import * as db from './supabase'
-import type { User, Goal, SubGoal } from '@/types'
+import type { DailyTask, User, Goal, SubGoal } from '@/types'
 
 // 同步状态
 export interface SyncStatus {
@@ -13,7 +13,7 @@ export interface SyncStatus {
   error: string | null
 }
 
-let syncStatus: SyncStatus = {
+const syncStatus: SyncStatus = {
   isSyncing: false,
   lastSyncTime: null,
   error: null
@@ -57,8 +57,7 @@ export async function initUserData(
  */
 export async function syncUserToDb(user: User): Promise<boolean> {
   try {
-    await db.updateUserProfile(user.id, user)
-    return true
+    return !!(await db.updateUserProfile(user.id, user))
   } catch (error) {
     console.error('Error syncing user to DB:', error)
     return false
@@ -89,7 +88,7 @@ export async function loadGoalsFromDb(userId: string): Promise<Goal[]> {
     return await db.getGoals(userId)
   } catch (error) {
     console.error('Error loading goals from DB:', error)
-    return []
+    throw error
   }
 }
 
@@ -102,7 +101,41 @@ export async function syncGoalToDb(
 ): Promise<Goal | null> {
   try {
     const newGoal = await db.createGoal(userId, goal)
-    return newGoal
+    if (!newGoal) return null
+
+    const sourceSubGoals = goal.subGoals || []
+    const sourceDailyTasks = goal.dailyTasks || []
+    const [createdSubGoals, createdDailyTasks] = await Promise.all([
+      Promise.all(sourceSubGoals.map((subGoal, index) => db.createSubGoal(newGoal.id, subGoal.title, index, subGoal))),
+      sourceDailyTasks.length > 0
+        ? db.createDailyTasks(newGoal.id, sourceDailyTasks)
+        : Promise.resolve([] as DailyTask[]),
+    ])
+
+    const childrenAreComplete = createdSubGoals.every(Boolean)
+      && createdSubGoals.length === sourceSubGoals.length
+      && createdDailyTasks.length === sourceDailyTasks.length
+
+    if (!childrenAreComplete) {
+      // Supabase 客户端目前没有跨表事务，这里用补偿删除避免留下“空目标”。
+      await db.deleteGoal(newGoal.id, userId)
+      console.error('Error syncing goal to DB: child records were not fully created')
+      return null
+    }
+
+    return {
+      ...newGoal,
+      subGoals: createdSubGoals.map((created, index) => ({
+        ...sourceSubGoals[index],
+        ...created!,
+        goalId: newGoal.id,
+      })),
+      dailyTasks: createdDailyTasks.map((created, index) => ({
+        ...sourceDailyTasks[index],
+        ...created,
+        goalId: newGoal.id,
+      })),
+    }
   } catch (error) {
     console.error('Error syncing goal to DB:', error)
     return null
@@ -136,13 +169,12 @@ export async function deleteGoalInDb(goalId: string): Promise<boolean> {
 /**
  * 添加子目标到数据库
  */
-export async function addSubGoalToDb(goalId: string, title: string): Promise<boolean> {
+export async function addSubGoalToDb(goalId: string, title: string, orderIndex = 0): Promise<SubGoal | null> {
   try {
-    const subGoal = await db.createSubGoal(goalId, title)
-    return !!subGoal
+    return await db.createSubGoal(goalId, title, orderIndex)
   } catch (error) {
     console.error('Error adding sub-goal to DB:', error)
-    return false
+    return null
   }
 }
 
@@ -184,6 +216,16 @@ export async function toggleDailyTaskInDb(taskId: string): Promise<boolean> {
     return !!task
   } catch (error) {
     console.error('Error toggling daily task in DB:', error)
+    return false
+  }
+}
+
+export async function updateDailyTasksInDb(tasks: DailyTask[]): Promise<boolean> {
+  try {
+    const results = await Promise.all(tasks.map(task => db.updateDailyTask(task.id, task)))
+    return results.every(Boolean)
+  } catch (error) {
+    console.error('Error updating daily tasks in DB:', error)
     return false
   }
 }

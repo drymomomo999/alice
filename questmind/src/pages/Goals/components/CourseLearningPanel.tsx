@@ -1,11 +1,12 @@
-import { useMemo, useState } from 'react'
-import { AlertCircle, BookOpenCheck, Brain, ChevronDown, Clock3, Loader2, RefreshCw, Route, Sparkles } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { AlertCircle, BookOpenCheck, Brain, ChevronDown, Clock3, History, Loader2, RefreshCw, RotateCcw, Route, Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useUserStore } from '@/store'
 import type { Goal } from '@/types'
 import { DOCUMENT_TYPE_LABELS } from '@/course-engine/config'
 import { buildStudyMap, evidenceForNode } from '@/course-engine/engine'
-import { analyzeGoalCourse, classifyGoalAttachments, getCourseModel, recordMasteryEvent } from '@/course-engine/service'
+import { analyzeGoalCourse, classifyGoalAttachments, getCourseModel, projectContinuityPlanToGoal, recordMasteryEvent, rollbackGoalPlan } from '@/course-engine/service'
+import { selectTodayTasks } from '@/course-engine/continuity'
 import type { CourseDocumentType, CourseModel, StudyMode } from '@/course-engine/types'
 
 const MODES: Array<{ value: StudyMode; label: string }> = [
@@ -36,6 +37,25 @@ export function CourseLearningPanel({ goal, onUpdateGoal }: CourseLearningPanelP
     [goal.attachments],
   )
   const studyMap = useMemo(() => model ? buildStudyMap(model, mode) : null, [model, mode])
+  const attachmentSignature = useMemo(() => documentAttachments.map(item => `${item.id}:${item.uploadedAt}`).join('|'), [documentAttachments])
+
+  useEffect(() => {
+    const persisted = getCourseModel(goal.id)
+    setModel(persisted)
+    if (!persisted?.continuity) return
+    const projection = projectContinuityPlanToGoal(persisted, goal)
+    const currentSignature = JSON.stringify({
+      progress: goal.progress,
+      subGoals: goal.subGoals.map(item => [item.id, item.completed]),
+      tasks: (goal.dailyTasks || []).map(item => [item.id, item.completed]),
+    })
+    const projectedSignature = JSON.stringify({
+      progress: projection.progress,
+      subGoals: projection.subGoals.map(item => [item.id, item.completed]),
+      tasks: projection.dailyTasks?.map(item => [item.id, item.completed]) || [],
+    })
+    if (currentSignature !== projectedSignature) onUpdateGoal(goal.id, projection)
+  }, [attachmentSignature, goal, onUpdateGoal])
 
   const build = () => {
     setIsBuilding(true)
@@ -47,6 +67,7 @@ export function CourseLearningPanel({ goal, onUpdateGoal }: CourseLearningPanelP
       }
       const next = analyzeGoalCourse({ ...goal, attachments: classified }, user?.id || goal.userId || 'local-user')
       setModel(next)
+      onUpdateGoal(goal.id, projectContinuityPlanToGoal(next, { ...goal, attachments: classified }))
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : '课程模型构建失败')
     } finally {
@@ -83,6 +104,15 @@ export function CourseLearningPanel({ goal, onUpdateGoal }: CourseLearningPanelP
     const next = recordMasteryEvent(goal.id, nodeId, result, result === 'wrong' ? '练习错误' : undefined)
     if (next) setModel(next)
   }
+
+  const rollbackPlan = () => {
+    const next = rollbackGoalPlan(goal.id)
+    if (!next) return
+    setModel(next)
+    onUpdateGoal(goal.id, projectContinuityPlanToGoal(next, goal))
+  }
+
+  const todayTasks = useMemo(() => model?.continuity ? selectTodayTasks(model, 45) : [], [model])
 
   return (
     <section className="rounded-2xl border border-indigo-100 bg-gradient-to-b from-indigo-50/60 to-white overflow-hidden">
@@ -154,6 +184,37 @@ export function CourseLearningPanel({ goal, onUpdateGoal }: CourseLearningPanelP
                 <div className="rounded-xl bg-white border border-indigo-100 p-2"><strong className="block text-base text-indigo-600">{model.evidence.length}</strong><span className="text-[9px] text-muted-foreground">来源证据</span></div>
                 <div className="rounded-xl bg-white border border-indigo-100 p-2"><strong className="block text-base text-indigo-600">{model.reviewQueue.length}</strong><span className="text-[9px] text-muted-foreground">今日复习</span></div>
               </div>
+
+              {model.continuity && (
+                <div className="rounded-2xl border border-indigo-200 bg-white p-3 space-y-3" data-testid="plan-change-card">
+                  <div className="flex items-start gap-2">
+                    <History className="mt-0.5 h-4 w-4 text-indigo-500 shrink-0" />
+                    <div className="min-w-0 flex-1">
+                      <h4 className="text-xs font-bold text-indigo-900">这次资料带来的计划变化</h4>
+                      <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">{model.continuity.lastSummary}</p>
+                    </div>
+                    {model.continuity.revisions.some(item => item.triggerType === 'DOCUMENT_UPLOAD' && !item.revertedAt) && (
+                      <button onClick={rollbackPlan} className="inline-flex items-center gap-1 rounded-lg border border-indigo-100 px-2 py-1 text-[10px] text-indigo-600 hover:bg-indigo-50" aria-label="恢复上一个计划版本">
+                        <RotateCcw className="h-3 w-3" />恢复
+                      </button>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-[10px]">
+                    <div><span className="text-muted-foreground">当前阶段</span><strong className="block mt-0.5 text-foreground">{model.continuity.currentStage}</strong></div>
+                    <div><span className="text-muted-foreground">下一阶段</span><strong className="block mt-0.5 text-foreground">{model.continuity.lastDelta?.suggestedNextStage || '按当前计划继续'}</strong></div>
+                    <div><span className="text-muted-foreground">本次新增</span><strong className="block mt-0.5 text-foreground">{model.continuity.lastDelta?.addedNodes.length || 0} 个知识点</strong></div>
+                    <div><span className="text-muted-foreground">历史保留</span><strong className="block mt-0.5 text-foreground">{model.continuity.tasks.filter(item => item.status === 'DONE').length} 个已完成任务</strong></div>
+                  </div>
+                  {todayTasks.length > 0 && (
+                    <div className="border-t border-indigo-50 pt-2">
+                      <p className="text-[10px] font-semibold text-indigo-800">现在最值得做</p>
+                      <div className="mt-1.5 space-y-1">
+                        {todayTasks.slice(0, 3).map(task => <p key={task.id} className="flex items-center gap-2 text-[10px]"><span className="h-1.5 w-1.5 rounded-full bg-indigo-400" /><span className="flex-1 truncate">{task.title}</span><span className="text-muted-foreground">{task.estimatedMinutes} 分钟</span></p>)}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div>
                 <h4 className="flex items-center gap-1.5 text-xs font-bold mb-2"><Route className="w-3.5 h-3.5 text-indigo-500" />本课知识主线</h4>

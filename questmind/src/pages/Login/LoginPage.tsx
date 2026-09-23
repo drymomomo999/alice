@@ -13,7 +13,7 @@ type AuthMode = 'login' | 'register'
 
 export function LoginPage() {
   const navigate = useNavigate()
-  const { isAuthenticated, initializeUser, loadUser } = useUserStore()
+  const { isAuthenticated, authChecked } = useUserStore()
 
   const [mode, setMode] = useState<AuthMode>('login')
   const [loading, setLoading] = useState(false)
@@ -23,16 +23,18 @@ export function LoginPage() {
   const [nickname, setNickname] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
 
   useEffect(() => {
-    if (isAuthenticated) {
+    if (isAuthenticated && authChecked) {
       navigate('/')
     }
-  }, [isAuthenticated, navigate])
+  }, [isAuthenticated, authChecked, navigate])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
+    setNotice('')
 
     if (!email) { setError('请输入邮箱地址'); return }
     if (!password) { setError('请输入密码'); return }
@@ -49,16 +51,19 @@ export function LoginPage() {
       if (mode === 'login') {
         const result = await signInWithEmail(email, password)
         if (result.success && result.user) {
-          await loadUser(result.user.id)
-          navigate('/')
+          setNotice('登录成功，正在恢复你的资料…')
         } else {
           setError(result.error || '登录失败，请检查凭证')
         }
       } else {
         const result = await signUpWithEmail(email, password, nickname)
-        if (result.success && result.user) {
-          await initializeUser(result.user.id, email, nickname)
-          navigate('/')
+        if (result.success && result.needsEmailConfirmation) {
+          setMode('login')
+          setPassword('')
+          setConfirmPassword('')
+          setNotice('注册信息已提交。请先打开邮箱完成确认，然后回到这里登录。')
+        } else if (result.success && result.user) {
+          setNotice('注册成功，正在准备你的资料…')
         } else {
          setError(result.error || '注册失败')
         }
@@ -110,7 +115,7 @@ export function LoginPage() {
               {(['login', 'register'] as AuthMode[]).map((m) => (
                 <button
                   key={m}
-                  onClick={() => { setMode(m); setError('') }}
+                  onClick={() => { setMode(m); setError(''); setNotice('') }}
                   className={`flex-1 py-2 rounded-xl text-sm font-bold transition-all ${
                     mode === m
                       ? 'bg-white text-sakura shadow-sm shadow-sakura-pink/15'
@@ -127,6 +132,13 @@ export function LoginPage() {
               <div className="mb-4 p-3 rounded-xl bg-red-50 border border-red-200 text-red-500 text-sm flex items-start gap-2">
                 <span>⚠️</span>
                 <span>{error}</span>
+              </div>
+            )}
+
+            {notice && (
+              <div className="mb-4 p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm flex items-start gap-2" role="status">
+                <span>✓</span>
+                <span>{notice}</span>
               </div>
             )}
 

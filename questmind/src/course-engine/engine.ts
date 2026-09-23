@@ -28,6 +28,7 @@ import type {
   UserKnowledgeState,
 } from './types'
 import { addDays, clamp, estimateTokens, normalizeName, round, similarity, stableId } from './utils'
+import { reconcileContinuity, type InitialPlanSeed } from './continuity'
 
 const EMPHASIS_RE = /(重点|注意|掌握|必会|考试|易错|核心|important|must|exam)/i
 const ERROR_RE = /(易错|常见错误|不要|不能|混淆|误区|warning)/i
@@ -266,6 +267,7 @@ export function buildCourseModel(options: {
   courseName: string
   documents: CourseDocumentInput[]
   previous?: CourseModel | null
+  initialPlan?: InitialPlanSeed
   now?: string
 }): CourseModel {
   const now = options.now || new Date().toISOString()
@@ -300,8 +302,10 @@ export function buildCourseModel(options: {
     mastery: normalized.mastery,
     masteryEvents: options.previous?.masteryEvents || [],
     reviewQueue: [],
+    continuity: undefined as unknown as CourseModel['continuity'],
   }
   model.reviewQueue = buildReviewQueue(model, now)
+  model.continuity = reconcileContinuity(model, options.previous, now, options.initialPlan)
   return model
 }
 

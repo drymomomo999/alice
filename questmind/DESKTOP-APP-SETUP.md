@@ -32,7 +32,7 @@ cargo --version
 cd d:\text1\questmind
 npm run tauri:dev
 ```
-或者直接双击 `start-app.bat`。
+开发模式请使用上面的命令。`start-app.bat` 只启动已经构建好的 release 程序，不会启动开发服务器。
 
 效果：弹出一个原生 Windows 窗口，内容和网页版完全一样，代码改动自动热更新。
 
